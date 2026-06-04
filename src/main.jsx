@@ -483,6 +483,18 @@ function RegisterProjectModal({ busy, onSubmit, onClose }) {
   const [form, setForm] = useState(DEFAULT_PROJECT_FORM);
   const [dirty, setDirty] = useState(false);
 
+  const refreshSuggestedPort = (audience) => {
+    fetch(`/api/ports/next?audience=${audience}&kind=primary`)
+      .then((response) => response.json())
+      .then((data) => {
+        setForm((current) => (
+          current.audience === audience
+            ? { ...current, port: String(data.port || "") }
+            : current
+        ));
+      })
+      .catch(() => {});
+  };
   const setField = (field, value, markDirty = true) => {
     if (markDirty) setDirty(true);
     setForm((current) => ({ ...current, [field]: value }));
@@ -490,6 +502,7 @@ function RegisterProjectModal({ busy, onSubmit, onClose }) {
   const setAudience = (value) => setForm((current) => ({
     ...current,
     audience: value,
+    port: "",
     repositoryOwner: value === "personal" ? "treviscleary" : current.repositoryOwner,
   }));
   const setHostingStrategy = (value) => setForm((current) => ({
@@ -516,16 +529,7 @@ function RegisterProjectModal({ busy, onSubmit, onClose }) {
   );
 
   useEffect(() => {
-    let cancelled = false;
-    fetch(`/api/ports/next?audience=${form.audience}&kind=primary`)
-      .then((response) => response.json())
-      .then((data) => {
-        if (!cancelled) setField("port", String(data.port || ""), false);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+    refreshSuggestedPort(form.audience);
   }, [form.audience]);
 
   return (
