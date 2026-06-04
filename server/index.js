@@ -642,6 +642,18 @@ app.get("/api/ports/next", async (req, res) => {
   }
 });
 
+app.get("/api/ports/suggestions", async (_req, res) => {
+  try {
+    const projects = await discoverProjects();
+    res.json({
+      personal: nextAssignedPort(projects, "personal", "primary"),
+      work: nextAssignedPort(projects, "work", "primary"),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post("/api/projects/register", async (req, res) => {
   try {
     res.json(await createRegisteredProject(req.body || {}));

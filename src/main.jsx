@@ -482,16 +482,18 @@ const DEFAULT_PROJECT_FORM = {
 function RegisterProjectModal({ busy, onSubmit, onClose }) {
   const [form, setForm] = useState(DEFAULT_PROJECT_FORM);
   const [dirty, setDirty] = useState(false);
+  const [suggestedPorts, setSuggestedPorts] = useState({});
 
-  const refreshSuggestedPort = (audience) => {
-    fetch(`/api/ports/next?audience=${audience}&kind=primary`)
+  const fetchSuggestedPorts = () => {
+    fetch("/api/ports/suggestions")
       .then((response) => response.json())
       .then((data) => {
-        setForm((current) => (
-          current.audience === audience
-            ? { ...current, port: String(data.port || "") }
-            : current
-        ));
+        const nextPorts = {
+          personal: String(data.personal || ""),
+          work: String(data.work || ""),
+        };
+        setSuggestedPorts(nextPorts);
+        setForm((current) => ({ ...current, port: nextPorts[current.audience] || "" }));
       })
       .catch(() => {});
   };
@@ -502,7 +504,7 @@ function RegisterProjectModal({ busy, onSubmit, onClose }) {
   const setAudience = (value) => setForm((current) => ({
     ...current,
     audience: value,
-    port: "",
+    port: suggestedPorts[value] || "",
     repositoryOwner: value === "personal" ? "treviscleary" : current.repositoryOwner,
   }));
   const setHostingStrategy = (value) => setForm((current) => ({
@@ -529,8 +531,8 @@ function RegisterProjectModal({ busy, onSubmit, onClose }) {
   );
 
   useEffect(() => {
-    refreshSuggestedPort(form.audience);
-  }, [form.audience]);
+    fetchSuggestedPorts();
+  }, []);
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={requestClose}>
@@ -630,7 +632,7 @@ function RegisterProjectModal({ busy, onSubmit, onClose }) {
               </select>
             </label>
             {form.hostingStrategy === "Other" ? (
-              <label className="full-row">
+              <label>
                 <span>Hosting platform</span>
                 <input value={form.hostingPlatform} onChange={(event) => setField("hostingPlatform", event.target.value)} placeholder="Name the platform" required />
               </label>
