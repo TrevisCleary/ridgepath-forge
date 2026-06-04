@@ -35,6 +35,7 @@ npm run dev
 - Restarts services with one Restart button.
 - Hides Open, Restart, and Stop project actions unless the selected project is running.
 - Shows a Port Map modal from the top KPI row with discovered ports and open/closed status.
+- Runs `git pull --ff-only` for a selected project from the Repository Git Sync button when a GitHub remote exists.
 - Infers work vs. personal projects from the GitHub remote owner.
 - Opens project folders in File Explorer from the displayed project path.
 - Stores edited project descriptions in `data/project-overrides.json`, which is ignored by Git.

@@ -411,6 +411,11 @@ h3 {
   gap: 8px;
 }
 
+.resource-section {
+  display: grid;
+  gap: 8px;
+}
+
 .resource-row {
   min-height: 42px;
   display: flex;
@@ -475,6 +480,10 @@ h3 {
   align-items: center;
   gap: 8px;
   margin: 6px 0 8px;
+}
+
+.section-title.compact {
+  margin: 2px 0 0;
 }
 
 .services {

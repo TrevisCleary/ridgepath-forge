@@ -5,6 +5,7 @@ import {
   Code2,
   ExternalLink,
   FolderOpen,
+  GitPullRequestArrow,
   Network,
   Pencil,
   Play,
@@ -169,6 +170,7 @@ function App() {
             onStart={() => runAction(selected.id, "start")}
             onStop={() => runAction(selected.id, "stop")}
             onRestart={() => runAction(selected.id, "restart")}
+            onGitSync={() => runAction(selected.id, "git-sync")}
             onSaveDescription={(description) => saveDescription(selected.id, description)}
             onOpenFolder={() => openFolder(selected.id)}
           />
@@ -202,7 +204,7 @@ function Metric({ label, value, icon }) {
   );
 }
 
-function ProjectDetail({ project, busy, onStart, onStop, onRestart, onSaveDescription, onOpenFolder }) {
+function ProjectDetail({ project, busy, onStart, onStop, onRestart, onGitSync, onSaveDescription, onOpenFolder }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(project.description);
   const isBusy = busy.startsWith(`${project.id}:`);
@@ -283,26 +285,35 @@ function ProjectDetail({ project, busy, onStart, onStop, onRestart, onSaveDescri
         <Info label="Status" value={project.status} tone={project.status} />
       </div>
 
-      <div className="resource-stack">
-        <div className="resource-row">
-          <div className="resource-meta">
-            <FolderOpen size={16} />
-            <span>
-              <strong>Local Directory</strong>
-              <small>{project.path}</small>
-            </span>
-          </div>
-          <button className="secondary-action" onClick={onOpenFolder}>
-            Open Directory
-          </button>
+      <div className="resource-section">
+        <div className="section-title compact">
+          <FolderOpen size={17} />
+          <h3>Locations</h3>
         </div>
-        <div className="resource-row">
-          <div className="resource-meta">
-            <ExternalLink size={16} />
-            <span>
-              <strong>Repository</strong>
-              <small>{project.origin || "No remote detected"}</small>
-            </span>
+        <div className="resource-stack">
+          <div className="resource-row">
+            <div className="resource-meta">
+              <FolderOpen size={16} />
+              <span>
+                <strong>Local Directory</strong>
+                <small>{project.path}</small>
+              </span>
+            </div>
+            <button className="secondary-action" onClick={onOpenFolder}>
+              Open Directory
+            </button>
+          </div>
+          <div className="resource-row">
+            <div className="resource-meta">
+              <GitPullRequestArrow size={16} />
+              <span>
+                <strong>Repository</strong>
+                <small>{project.origin || "No remote detected"}</small>
+              </span>
+            </div>
+            <button className="secondary-action" disabled={isBusy || !project.origin} onClick={onGitSync}>
+              Git Sync
+            </button>
           </div>
         </div>
       </div>
