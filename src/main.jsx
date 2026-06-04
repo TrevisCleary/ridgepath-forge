@@ -481,6 +481,16 @@ function RegisterProjectModal({ busy, onSubmit, onClose }) {
   });
 
   const setField = (field, value) => setForm((current) => ({ ...current, [field]: value }));
+  const setAudience = (value) => setForm((current) => ({
+    ...current,
+    audience: value,
+    repositoryOwner: value === "personal" ? "treviscleary" : current.repositoryOwner,
+  }));
+  const setHostingStrategy = (value) => setForm((current) => ({
+    ...current,
+    hostingStrategy: value,
+    hostingPlatform: value === "Other" ? current.hostingPlatform : "",
+  }));
 
   useEffect(() => {
     let cancelled = false;
@@ -519,13 +529,17 @@ function RegisterProjectModal({ busy, onSubmit, onClose }) {
               <span>Project name</span>
               <input value={form.name} onChange={(event) => setField("name", event.target.value)} required />
             </label>
-            <label>
+            <div className="field-group">
               <span>Audience</span>
-              <select value={form.audience} onChange={(event) => setField("audience", event.target.value)}>
-                <option value="personal">Personal</option>
-                <option value="work">Work</option>
-              </select>
-            </label>
+              <SegmentedControl
+                value={form.audience}
+                options={[
+                  { value: "personal", label: "Personal" },
+                  { value: "work", label: "Work" },
+                ]}
+                onChange={setAudience}
+              />
+            </div>
             <label>
               <span>Assigned port</span>
               <input type="number" value={form.port} onChange={(event) => setField("port", event.target.value)} min="1000" max="65535" required />
@@ -556,27 +570,37 @@ function RegisterProjectModal({ busy, onSubmit, onClose }) {
             </label>
             <label>
               <span>Repository owner</span>
-              <input value={form.repositoryOwner} onChange={(event) => setField("repositoryOwner", event.target.value)} required />
-            </label>
-            <label>
-              <span>Repository visibility</span>
-              <select value={form.repositoryVisibility} onChange={(event) => setField("repositoryVisibility", event.target.value)}>
-                <option>Private</option>
-                <option>Public</option>
+              <select value={form.repositoryOwner} onChange={(event) => setField("repositoryOwner", event.target.value)} required>
+                <option value="treviscleary">treviscleary</option>
+                <option value="InfinityHealthcareConsulting">InfinityHealthcareConsulting</option>
+                <option value="Ridgepath-tech">Ridgepath-tech</option>
               </select>
             </label>
+            <div className="field-group">
+              <span>Repository visibility</span>
+              <SegmentedControl
+                value={form.repositoryVisibility}
+                options={[
+                  { value: "Private", label: "Private" },
+                  { value: "Public", label: "Public" },
+                ]}
+                onChange={(value) => setField("repositoryVisibility", value)}
+              />
+            </div>
             <label>
               <span>Hosting strategy</span>
-              <select value={form.hostingStrategy} onChange={(event) => setField("hostingStrategy", event.target.value)}>
+              <select value={form.hostingStrategy} onChange={(event) => setHostingStrategy(event.target.value)}>
                 <option>Vercel</option>
                 <option>Other</option>
                 <option>None yet</option>
               </select>
             </label>
-            <label>
-              <span>Hosting platform</span>
-              <input value={form.hostingPlatform} onChange={(event) => setField("hostingPlatform", event.target.value)} placeholder="Only needed for Other" />
-            </label>
+            {form.hostingStrategy === "Other" ? (
+              <label>
+                <span>Hosting platform</span>
+                <input value={form.hostingPlatform} onChange={(event) => setField("hostingPlatform", event.target.value)} placeholder="Name the platform" required />
+              </label>
+            ) : null}
             <label>
               <span>Package manager</span>
               <select value={form.packageManager} onChange={(event) => setField("packageManager", event.target.value)}>
@@ -606,6 +630,24 @@ function RegisterProjectModal({ busy, onSubmit, onClose }) {
           </div>
         </form>
       </section>
+    </div>
+  );
+}
+
+function SegmentedControl({ value, options, onChange }) {
+  return (
+    <div className="segmented-control" role="group">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          className={value === option.value ? "active" : ""}
+          type="button"
+          onClick={() => onChange(option.value)}
+          aria-pressed={value === option.value}
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   );
 }
