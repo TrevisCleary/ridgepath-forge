@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.launcher-logs/
+data/project-overrides.json
+dashboard-preview.png
+npm-debug.log*
