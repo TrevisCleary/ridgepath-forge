@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "dev": "concurrently \"npm run server\" \"npm run client\" \"npm run redirect\"",
     "server": "node server/index.js",
+    "redirect": "node server/redirect.js",
     "client": "vite --host localhost --port 3060",
     "build": "vite build",
     "preview": "vite preview --host localhost --port 3060"

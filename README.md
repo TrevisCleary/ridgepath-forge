@@ -71,6 +71,12 @@ Windows host resolution can map a name to `127.0.0.1`, but it cannot map a name 
 http://dev-launcher:3060/
 ```
 
+The default `npm run dev` command also starts a small local redirect on port 80, so this shorter URL works when port 80 is available:
+
+```text
+http://dev-launcher/
+```
+
 Register the local hostnames from an elevated PowerShell session:
 
 ```powershell
