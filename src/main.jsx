@@ -465,22 +465,35 @@ function PortTreeModal({ projects, onClose }) {
 }
 
 function RegisterProjectModal({ busy, onSubmit, onClose }) {
-  const [name, setName] = useState("");
-  const [audience, setAudience] = useState("personal");
-  const [port, setPort] = useState("");
+  const [form, setForm] = useState({
+    name: "",
+    audience: "personal",
+    port: "",
+    applicationClassification: "Internal Business Application",
+    technologyStack: "Vite + React + JavaScript",
+    repositoryOwner: "treviscleary",
+    repositoryVisibility: "Private",
+    hostingStrategy: "Vercel",
+    hostingPlatform: "",
+    packageManager: "npm",
+    createStandardDocumentation: true,
+    createGovernanceAssets: true,
+  });
+
+  const setField = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/ports/next?audience=${audience}&kind=primary`)
+    fetch(`/api/ports/next?audience=${form.audience}&kind=primary`)
       .then((response) => response.json())
       .then((data) => {
-        if (!cancelled) setPort(String(data.port || ""));
+        if (!cancelled) setField("port", String(data.port || ""));
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [audience]);
+  }, [form.audience]);
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -498,28 +511,98 @@ function RegisterProjectModal({ busy, onSubmit, onClose }) {
           className="register-form"
           onSubmit={(event) => {
             event.preventDefault();
-            onSubmit({ name, audience, port: Number(port) });
+            onSubmit({ ...form, port: Number(form.port) });
           }}
         >
-          <label>
-            <span>Project name</span>
-            <input value={name} onChange={(event) => setName(event.target.value)} required />
-          </label>
-          <label>
-            <span>Audience</span>
-            <select value={audience} onChange={(event) => setAudience(event.target.value)}>
-              <option value="personal">Personal</option>
-              <option value="work">Work</option>
-            </select>
-          </label>
-          <label>
-            <span>Assigned port</span>
-            <input type="number" value={port} onChange={(event) => setPort(event.target.value)} min="1000" max="65535" required />
-          </label>
-          <p className="form-note">Creates a minimal runnable project, writes Operations Library handoff docs, starts it, and lets the launcher auto-discover it.</p>
+          <div className="form-grid">
+            <label>
+              <span>Project name</span>
+              <input value={form.name} onChange={(event) => setField("name", event.target.value)} required />
+            </label>
+            <label>
+              <span>Audience</span>
+              <select value={form.audience} onChange={(event) => setField("audience", event.target.value)}>
+                <option value="personal">Personal</option>
+                <option value="work">Work</option>
+              </select>
+            </label>
+            <label>
+              <span>Assigned port</span>
+              <input type="number" value={form.port} onChange={(event) => setField("port", event.target.value)} min="1000" max="65535" required />
+            </label>
+            <label>
+              <span>Application classification</span>
+              <select value={form.applicationClassification} onChange={(event) => setField("applicationClassification", event.target.value)}>
+                <option>Internal Business Application</option>
+                <option>Customer Portal / SaaS</option>
+                <option>Public Website</option>
+                <option>API Service</option>
+                <option>Power Platform Solution</option>
+                <option>Automation Project</option>
+                <option>Other</option>
+              </select>
+            </label>
+            <label>
+              <span>Technology stack</span>
+              <select value={form.technologyStack} onChange={(event) => setField("technologyStack", event.target.value)}>
+                <option>Vite + React + TypeScript</option>
+                <option>Vite + React + JavaScript</option>
+                <option>Next.js + TypeScript</option>
+                <option>Power Platform</option>
+                <option>Python</option>
+                <option>C#</option>
+                <option>Mixed / Other</option>
+              </select>
+            </label>
+            <label>
+              <span>Repository owner</span>
+              <input value={form.repositoryOwner} onChange={(event) => setField("repositoryOwner", event.target.value)} required />
+            </label>
+            <label>
+              <span>Repository visibility</span>
+              <select value={form.repositoryVisibility} onChange={(event) => setField("repositoryVisibility", event.target.value)}>
+                <option>Private</option>
+                <option>Public</option>
+              </select>
+            </label>
+            <label>
+              <span>Hosting strategy</span>
+              <select value={form.hostingStrategy} onChange={(event) => setField("hostingStrategy", event.target.value)}>
+                <option>Vercel</option>
+                <option>Other</option>
+                <option>None yet</option>
+              </select>
+            </label>
+            <label>
+              <span>Hosting platform</span>
+              <input value={form.hostingPlatform} onChange={(event) => setField("hostingPlatform", event.target.value)} placeholder="Only needed for Other" />
+            </label>
+            <label>
+              <span>Package manager</span>
+              <select value={form.packageManager} onChange={(event) => setField("packageManager", event.target.value)}>
+                <option>npm</option>
+                <option>pnpm</option>
+                <option>yarn</option>
+                <option>dotnet</option>
+                <option>pip</option>
+                <option>none</option>
+              </select>
+            </label>
+          </div>
+          <div className="toggle-grid">
+            <label className="check-row">
+              <input type="checkbox" checked={form.createStandardDocumentation} onChange={(event) => setField("createStandardDocumentation", event.target.checked)} />
+              <span>Create standard folders</span>
+            </label>
+            <label className="check-row">
+              <input type="checkbox" checked={form.createGovernanceAssets} onChange={(event) => setField("createGovernanceAssets", event.target.checked)} />
+              <span>Create governance handoff</span>
+            </label>
+          </div>
+          <p className="form-note">Registers the project, writes Bootstrap Wizard handoff details, and lets the launcher discover it. It will not start until you click Start.</p>
           <div className="form-actions">
             <button className="secondary-action" type="button" onClick={onClose}>Cancel</button>
-            <button className="secondary-action primary-secondary" type="submit" disabled={busy}>{busy ? "Adding..." : "Add and Start"}</button>
+            <button className="secondary-action primary-secondary" type="submit" disabled={busy}>{busy ? "Adding..." : "Register Project"}</button>
           </div>
         </form>
       </section>
