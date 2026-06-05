@@ -1,7 +1,13 @@
 {
-  "name": "Local Dev Server",
-  "short_name": "Local",
+  "name": "RidgePath Forge",
+  "short_name": "Forge",
   "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
     {
       "src": "/assets/android-chrome-192x192.png",
       "sizes": "192x192",

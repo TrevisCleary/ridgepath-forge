@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title>RidgePath Forge anvil</title>
+  <rect width="64" height="64" rx="12" fill="#eef3f2"/>
+  <path
+    fill="#06264d"
+    d="M13 20h39c2.3 0 4.1 1.8 4.1 4.1v2.4c0 1.9-1.3 3.6-3.1 4l-8.7 2.2-4.7 7.1h4.7c1.6 0 2.9 1.3 2.9 2.9v2.2H21.4v-2.2c0-1.6 1.3-2.9 2.9-2.9h4.8l-3.1-5.2H13c-2.4 0-4.3-1.9-4.3-4.3v-6c0-2.4 1.9-4.3 4.3-4.3Z"
+  />
+  <path
+    fill="#1aa6ad"
+    d="M14.5 24.4h37.2v1.8l-12.1 3H14.5v-4.8Zm20.4 10.2h7.6l-3.5 5.2h-1.9l-3.2-5.2Z"
+    opacity=".82"
+  />
+  <path
+    fill="#06264d"
+    d="M18 47.4h32v5.1H18z"
+  />
+  <path
+    fill="#29c4cc"
+    d="m50.4 12.1 1.4 3.3 3.5 1-3.5 1-1.4 3.3-1.4-3.3-3.5-1 3.5-1 1.4-3.3Z"
+  />
+</svg>

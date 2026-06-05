@@ -15,12 +15,12 @@ const server = http.createServer((req, res) => {
 
 server.on("error", (error) => {
   if (error.code === "EADDRINUSE") {
-    console.warn(`Port ${REDIRECT_PORT} is already in use; dev-launcher root redirect is disabled.`);
+    console.warn(`Port ${REDIRECT_PORT} is already in use; RidgePath Forge legacy root redirect is disabled.`);
     return;
   }
   throw error;
 });
 
 server.listen(REDIRECT_PORT, "127.0.0.1", () => {
-  console.log(`Local launcher redirect listening on http://${TARGET_HOST}/ -> http://${TARGET_HOST}:${TARGET_PORT}/`);
+  console.log(`RidgePath Forge redirect listening on http://${TARGET_HOST}/ -> http://${TARGET_HOST}:${TARGET_PORT}/`);
 });

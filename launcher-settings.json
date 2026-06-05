@@ -1,0 +1,117 @@
+{
+  "operationsLibrary": {
+    "root": "C:\\Development\\Shared\\codex-operations-library",
+    "requiredFolders": [
+      "templates",
+      "prompts",
+      "docs",
+      "standards",
+      "bootstrap"
+    ],
+    "requiredFiles": [
+      "README.md",
+      "START-HERE.md",
+      "docs/prompt-catalog.md",
+      "docs/workflow-traceability-matrix.md",
+      "docs/project-management-architecture.md",
+      "docs/project-management-data-model.md",
+      "docs/project-launcher-ui-integration.md",
+      "bootstrap/bootstrap-config-template.md"
+    ]
+  },
+  "projectManagement": {
+    "directory": "docs/project-management",
+    "dashboardFileName": "project-dashboard.json",
+    "supportedDashboardSchemaVersions": [
+      "1.1"
+    ],
+    "openFiles": {
+      "lifecycle": "lifecycle-status.md",
+      "backlog": "backlog.md",
+      "bugs": "bugs.md",
+      "codexActivity": "codex-activity.md"
+    }
+  },
+  "templates": {
+    "bootstrapConfig": "templates/bootstrap/launcher-bootstrap-config-template.md",
+    "launcherHandoff": "templates/handoff/launcher-handoff-template.md",
+    "legacyOperationsLibraryHandoff": "templates/handoff/operations-library-handoff-template.md",
+    "governanceBootstrap": "templates/governance/launcher-governance-bootstrap-template.md",
+    "projectInitiation": "templates/project-initiation-template.md",
+    "projectSourceReadme": "templates/project-source-readme-template.md",
+    "codexNextPrompt": "templates/handoff/codex-next-prompt-template.md"
+  },
+  "workflows": {
+    "startNewProject": {
+      "name": "Start New Project",
+      "promptPath": "prompts/start-new-project.md",
+      "expectedInputs": [
+        "Project identity",
+        "Problem statement",
+        "Desired outcome",
+        "Source artifacts",
+        "Technology preferences"
+      ],
+      "expectedOutputs": [
+        "project-initiation.md",
+        "project-source/",
+        "bootstrap-config.md",
+        "docs/launcher-handoff.md",
+        "codex-next-prompt.md"
+      ]
+    },
+    "onboardExistingProject": {
+      "name": "Onboard Existing Project",
+      "promptPath": "prompts/onboard-existing-project.md",
+      "expectedInputs": [
+        "Repository path",
+        "Application purpose",
+        "Owner",
+        "Documentation sources"
+      ],
+      "expectedOutputs": [
+        "Onboarding summary",
+        "Source reconciliation notes",
+        "Governance assessment",
+        "Standardization plan"
+      ]
+    },
+    "projectInitiation": {
+      "name": "Project Initiation",
+      "promptPath": "prompts/project-initiation-prompt.md",
+      "expectedInputs": [
+        "project-initiation.md",
+        "project-source/",
+        "bootstrap-config.md"
+      ],
+      "expectedOutputs": [
+        "Discovery notes",
+        "Readiness assessment",
+        "Carry-forward questions"
+      ]
+    }
+  },
+  "artifacts": {
+    "projectSourceDirectories": [
+      "project-source",
+      "project-source/workflows",
+      "project-source/spreadsheets",
+      "project-source/screenshots",
+      "project-source/policies",
+      "project-source/requirements",
+      "project-source/meetings",
+      "project-source/diagrams",
+      "project-source/legacy"
+    ],
+    "standardDirectories": [
+      "docs/requirements",
+      "docs/architecture",
+      "docs/features",
+      "docs/decisions",
+      "docs/validation",
+      "assets",
+      "scripts",
+      "tests"
+    ]
+  }
+}

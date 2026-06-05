@@ -13,5 +13,5 @@ if ($filtered -join "`n" -match "(?m)^\s*127\.0\.0\.1\s+.*\bdev-launcher\b") {
 }
 
 Set-Content -Path $hostsPath -Value $filtered -Encoding ASCII
-Add-Content -Path $hostsPath -Value "`r`n# Local Project Launcher`r`n$desired" -Encoding ASCII
+Add-Content -Path $hostsPath -Value "`r`n# RidgePath Forge legacy local hostnames`r`n$desired" -Encoding ASCII
 Write-Host "Registered dev-launcher and devlauncher in hosts."

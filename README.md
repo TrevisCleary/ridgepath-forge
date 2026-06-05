@@ -1,6 +1,6 @@
-# Local Project Launcher
+# RidgePath Forge
 
-Local dashboard for launching and monitoring development projects under a configurable project root.
+Application Delivery Platform for launching, monitoring, registering, and governing development projects under a configurable project root.
 
 ## Run
 
@@ -11,10 +11,10 @@ npm run dev
 
 Open `http://localhost:3060`.
 
-The dashboard API runs on `http://localhost:3059` and can be pointed at another project root:
+The RidgePath Forge API runs on `http://localhost:3059` and can be pointed at another project root:
 
 ```powershell
-$env:PROJECTS_ROOT = "C:\Development\Projects"
+$env:PROJECTS_ROOT = "<project-root>"
 npm run dev
 ```
 
@@ -31,9 +31,9 @@ npm run dev
 - Reads `package.json`, README titles, Vite config, Next.js config, `.env`, and common server files.
 - Shows primary application services and API/data services when scripts such as `dev`, `start`, `dev:frontend`, `dev:api`, `api`, or `dev:db` exist.
 - Starts all discovered services for a project with one Start button.
-- Stops only processes started by this launcher with one Stop button.
+- Stops only processes started by RidgePath Forge with one Stop button.
 - Restarts services with one Restart button.
-- Takes over manually started projects by stopping the process on the assigned open port and restarting through the launcher.
+- Takes over manually started projects by stopping the process on the assigned open port and restarting through RidgePath Forge.
 - Hides Open, Restart, and Stop project actions unless the selected project is running.
 - Shows a Port Map modal from the top KPI row with discovered ports and open/closed status.
 - Runs `git pull --ff-only` for a selected project from the Repository Git Sync button when a GitHub remote exists.
@@ -44,22 +44,23 @@ npm run dev
 - Stores edited project descriptions in `data/project-overrides.json`, which is ignored by Git.
 - Displays project favicons when a known favicon/icon file exists.
 
-Projects that are already running outside this launcher are treated as running when one of their assigned ports is open. Stop and Restart are still limited to processes started by this launcher.
+Projects that are already running outside RidgePath Forge are treated as running when one of their assigned ports is open. Stop and Restart are still limited to processes started by RidgePath Forge.
 
-Use Take Over on an externally running project to stop the listener on the assigned port and restart the project as a launcher-managed process.
+Use Take Over on an externally running project to stop the listener on the assigned port and restart the project as a RidgePath Forge-managed process.
 
 ## Project Registration
 
-Use Add Project to create a minimal runnable project under `PROJECTS_ROOT`. The launcher assigns the next available primary port by audience:
+Use Add Project to create a minimal runnable project under `PROJECTS_ROOT`. RidgePath Forge assigns the next available primary port by audience:
 
 - Work application ports start at `3101`.
+- RidgePath application ports start at `3151`.
 - Personal application ports start at `3201`.
 
-Registration writes `bootstrap-config.md` and `docs/operations-library-handoff.md` into the new project. Those files point back to the Codex Operations Library and preserve the next workflow entry points. The launcher starts the project immediately, then the normal 5-second discovery cycle keeps it visible.
+Registration writes `bootstrap-config.md` and `docs/operations-library-handoff.md` into the new project. Those files point back to the Codex Operations Library and preserve the next workflow entry points. RidgePath Forge starts the project immediately, then the normal 5-second discovery cycle keeps it visible.
 
 ## Refresh Cadence
 
-The UI refreshes project status every 5 seconds and after launcher actions complete. A managed process that exits should be reflected on the next refresh cycle.
+The UI refreshes project status every 5 seconds and after RidgePath Forge actions complete. A managed process that exits should be reflected on the next refresh cycle.
 
 ## Start On Sign-In
 
@@ -79,13 +80,13 @@ If Task Scheduler registration is blocked by local permissions, use the current-
 
 ## Local Name
 
-Windows host resolution can map a name to `127.0.0.1`, but it cannot map a name to a port. A valid local hostname such as `dev-launcher` can be used as:
+Windows host resolution can map a name to `127.0.0.1`, but it cannot map a name to a port. The legacy local hostname `dev-launcher` is preserved for compatibility and can be used as:
 
 ```text
 http://dev-launcher:3060/
 ```
 
-The default `npm run dev` command also starts a small local redirect on port 80, so this shorter URL works when port 80 is available:
+The default `npm run dev` command also starts a small local redirect on port 80, so this shorter legacy URL works when port 80 is available:
 
 ```text
 http://dev-launcher/
