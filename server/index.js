@@ -770,6 +770,26 @@ function githubOwner(origin = "") {
   return normalized.match(/github\.com[:/](?<owner>[^/]+)\//i)?.groups?.owner || "";
 }
 
+function isHttpUrl(value = "") {
+  try {
+    const url = new URL(String(value));
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function liveProjectUrl(pkg = {}, override = {}) {
+  const candidates = [
+    override.liveUrl,
+    override.externalUrl,
+    override.url,
+    pkg.homepage,
+    pkg.liveUrl,
+  ];
+  return candidates.find((candidate) => isHttpUrl(candidate)) || "";
+}
+
 function runCapture(command, args, cwd) {
   return new Promise((resolve) => {
     const child = spawn(command, args, { cwd, windowsHide: true });
@@ -995,6 +1015,7 @@ async function discoverProjects() {
         owner: githubOwner(origin),
         audience: override.audience || projectAudience(origin),
         framework: "Unknown",
+        liveUrl: liveProjectUrl({}, override),
         faviconUrl: "",
         services,
         scripts: {},
@@ -1037,6 +1058,7 @@ async function discoverProjects() {
       owner: githubOwner(origin),
       audience: override.audience || projectAudience(origin),
       framework,
+      liveUrl: liveProjectUrl(pkg, override),
       packageManager: pkg.packageManager || "npm",
       faviconUrl: favicon ? `/api/projects/${id}/favicon?path=${encodeURIComponent(favicon)}` : "",
       services,

@@ -78,6 +78,12 @@ If Task Scheduler registration is blocked by local permissions, use the current-
 .\scripts\register-startup-folder.ps1
 ```
 
+To restart RidgePath Forge manually from this project folder, double-click `Restart RidgePath Forge.cmd` or run:
+
+```powershell
+.\scripts\restart-launcher.ps1
+```
+
 ## Local Name
 
 Windows host resolution can map a name to `127.0.0.1`, but it cannot map a name to a port. The legacy local hostname `dev-launcher` is preserved for compatibility and can be used as:

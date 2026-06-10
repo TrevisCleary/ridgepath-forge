@@ -509,6 +509,7 @@ function ProjectDetail({ project, busy, onBack, onStart, onStop, onRestart, onTa
           ) : null}
           {activeMenu === "management" ? (
             <ProjectManagementDashboard
+              project={project}
               projectManagement={projectManagement}
               onOpen={onOpenProjectManagementFolder}
               onInitialize={onInitializeProjectManagement}
@@ -525,6 +526,10 @@ function ProjectDetail({ project, busy, onBack, onStart, onStop, onRestart, onTa
 }
 
 function ProjectOverview({ project, editing, draft, onDraftChange, onEdit, onCancelEdit, onSaveDescription, onOpenFolder, onGitSync, isBusy }) {
+  const primaryServices = project.services.filter((service) => service.kind === "primary");
+  const apiServices = project.services.filter((service) => service.kind === "api");
+  const liveUrl = project.liveUrl || project.externalUrl || project.homepage || "";
+
   return (
     <div className="workspace-panel">
       <div className="description-row">
@@ -590,8 +595,69 @@ function ProjectOverview({ project, editing, draft, onDraftChange, onEdit, onCan
               Git Sync
             </button>
           </div>
+          {liveUrl ? (
+            <div className="resource-row">
+              <div className="resource-meta">
+                <ExternalLink size={16} />
+                <span>
+                  <strong>Live URL</strong>
+                  <small>{liveUrl}</small>
+                </span>
+              </div>
+              <a className="secondary-action" href={liveUrl} target="_blank" rel="noreferrer">
+                Open URL
+              </a>
+            </div>
+          ) : null}
         </div>
       </div>
+
+      <div className="resource-section">
+        <div className="section-title compact">
+          <Network size={17} />
+          <h3>Port Assignments</h3>
+        </div>
+        <div className="resource-stack">
+          {primaryServices.length ? primaryServices.map((service) => (
+            <EndpointResourceRow key={service.id} service={service} title={service.combined ? "Application + API" : "Application"} />
+          )) : (
+            <div className="empty compact-empty">No application port assigned.</div>
+          )}
+          {apiServices.length ? apiServices.map((service) => (
+            <EndpointResourceRow key={service.id} service={service} title="Associated API" />
+          )) : (
+            <div className="empty compact-empty">No associated API port assigned.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EndpointResourceRow({ service, title }) {
+  const url = service.port ? `http://localhost:${service.port}` : "";
+  const canOpen = url && (service.managedRunning || service.portStatus === "open");
+  return (
+    <div className="resource-row endpoint-row">
+      <div className="resource-meta">
+        {service.kind === "api" ? <Server size={16} /> : <Network size={16} />}
+        <span>
+          <strong>{title}</strong>
+          <small>{service.label} · {service.framework} · {service.script ? `npm run ${service.script}` : "script unknown"}</small>
+        </span>
+      </div>
+      <div className="endpoint-badges">
+        <span>{service.port || "Port unknown"}</span>
+        {service.portConflict ? <span className="collision"><AlertTriangle size={13} />Conflict</span> : null}
+        <span className={`port-state ${service.managedRunning ? "running" : service.portStatus}`}>{service.managedRunning ? "managed" : service.portStatus}</span>
+      </div>
+      {canOpen ? (
+        <a className="secondary-action" href={url} target="_blank" rel="noreferrer">
+          Open
+        </a>
+      ) : (
+        <button className="secondary-action" type="button" disabled>Open</button>
+      )}
     </div>
   );
 }
@@ -686,15 +752,17 @@ function ProjectManagementStatusStrip({ projectManagement }) {
 
 const PROJECT_MANAGEMENT_TABS = ["Overview", "Backlog", "Bugs", "Governance", "Codex Activity"];
 
-function ProjectManagementDashboard({ projectManagement, onOpen, onInitialize, isInitializing }) {
+function ProjectManagementDashboard({ project, projectManagement, onOpen, onInitialize, isInitializing }) {
   const [activeTab, setActiveTab] = useState("Overview");
   const [backlogFilters, setBacklogFilters] = useState({ status: "all", priority: "all", type: "all" });
   const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [copiedScopedPrompt, setCopiedScopedPrompt] = useState("");
 
   useEffect(() => {
     setActiveTab("Overview");
     setBacklogFilters({ status: "all", priority: "all", type: "all" });
     setCopiedPrompt(false);
+    setCopiedScopedPrompt("");
   }, [projectManagement.dashboardPath]);
 
   const dashboard = projectManagement.dashboard || {};
@@ -703,9 +771,16 @@ function ProjectManagementDashboard({ projectManagement, onOpen, onInitialize, i
 
   async function copyCodexPrompt() {
     if (!promptContent) return;
-    await navigator.clipboard.writeText(promptContent);
+    await copyTextToClipboard(promptContent);
     setCopiedPrompt(true);
     window.setTimeout(() => setCopiedPrompt(false), 1800);
+  }
+
+  async function copyScopedPrompt(scope) {
+    const content = scopedProjectManagementPrompt(project, projectManagement, scope);
+    await copyTextToClipboard(content);
+    setCopiedScopedPrompt(scope);
+    window.setTimeout(() => setCopiedScopedPrompt(""), 1800);
   }
 
   return (
@@ -758,9 +833,9 @@ function ProjectManagementDashboard({ projectManagement, onOpen, onInitialize, i
             </div>
           ) : null}
           {activeTab === "Overview" ? <ProjectManagementOverview projectManagement={projectManagement} /> : null}
-          {activeTab === "Backlog" ? <ProjectManagementBacklog dashboard={dashboard} filters={backlogFilters} onFiltersChange={setBacklogFilters} /> : null}
-          {activeTab === "Bugs" ? <ProjectManagementBugs dashboard={dashboard} /> : null}
-          {activeTab === "Governance" ? <ProjectManagementGovernance dashboard={dashboard} /> : null}
+          {activeTab === "Backlog" ? <ProjectManagementBacklog dashboard={dashboard} filters={backlogFilters} onFiltersChange={setBacklogFilters} onCopyPrompt={() => copyScopedPrompt("backlog")} copiedPrompt={copiedScopedPrompt === "backlog"} /> : null}
+          {activeTab === "Bugs" ? <ProjectManagementBugs dashboard={dashboard} onCopyPrompt={() => copyScopedPrompt("bugs")} copiedPrompt={copiedScopedPrompt === "bugs"} /> : null}
+          {activeTab === "Governance" ? <ProjectManagementGovernance dashboard={dashboard} onCopyPrompt={() => copyScopedPrompt("governance")} copiedPrompt={copiedScopedPrompt === "governance"} /> : null}
           {activeTab === "Codex Activity" ? <ProjectManagementCodexActivity dashboard={dashboard} /> : null}
         </>
       )}
@@ -792,7 +867,7 @@ function ProjectManagementOverview({ projectManagement }) {
   );
 }
 
-function ProjectManagementBacklog({ dashboard, filters, onFiltersChange }) {
+function ProjectManagementBacklog({ dashboard, filters, onFiltersChange, onCopyPrompt, copiedPrompt }) {
   const backlog = Array.isArray(dashboard.backlog) ? dashboard.backlog : null;
   const rows = backlog || [];
   const filterOptions = (field) => uniqueValues(rows.map((row) => fieldValue(row?.[field])).filter((value) => value !== "Needs Manual Review"));
@@ -805,6 +880,7 @@ function ProjectManagementBacklog({ dashboard, filters, onFiltersChange }) {
   if (!backlog) return <ManualReviewPanel message="Backlog data is missing or invalid." />;
   return (
     <div className="pm-panel">
+      <ProjectManagementPromptAction label="Copy Backlog Codex Prompt" copied={copiedPrompt} onCopy={onCopyPrompt} />
       <div className="pm-filter-row">
         <FilterSelect label="Status" value={filters.status} options={filterOptions("status")} onChange={(value) => onFiltersChange((current) => ({ ...current, status: value }))} />
         <FilterSelect label="Priority" value={filters.priority} options={filterOptions("priority")} onChange={(value) => onFiltersChange((current) => ({ ...current, priority: value }))} />
@@ -822,7 +898,7 @@ function ProjectManagementBacklog({ dashboard, filters, onFiltersChange }) {
   );
 }
 
-function ProjectManagementBugs({ dashboard }) {
+function ProjectManagementBugs({ dashboard, onCopyPrompt, copiedPrompt }) {
   const bugs = Array.isArray(dashboard.bugs) ? dashboard.bugs : null;
   const rows = bugs || [];
   const openCount = rows.filter((bug) => bugGroup(bug?.status) !== "Closed").length;
@@ -832,6 +908,7 @@ function ProjectManagementBugs({ dashboard }) {
   if (!bugs) return <ManualReviewPanel message="Bug data is missing or invalid." />;
   return (
     <div className="pm-panel">
+      <ProjectManagementPromptAction label="Copy Bugs Codex Prompt" copied={copiedPrompt} onCopy={onCopyPrompt} />
       <div className="pm-overview-grid compact">
         <Info label="Open Bugs" value={openCount} />
         <Info label="Critical Bugs" value={criticalCount} />
@@ -858,13 +935,14 @@ function ProjectManagementBugs({ dashboard }) {
   );
 }
 
-function ProjectManagementGovernance({ dashboard }) {
+function ProjectManagementGovernance({ dashboard, onCopyPrompt, copiedPrompt }) {
   const governance = dashboard.governance && typeof dashboard.governance === "object" ? dashboard.governance : null;
   if (!governance) return <ManualReviewPanel message="Governance data is missing or invalid." />;
   const phases = Array.isArray(governance.phases) ? governance.phases : [];
 
   return (
     <div className="pm-panel">
+      <ProjectManagementPromptAction label="Copy Governance Codex Prompt" copied={copiedPrompt} onCopy={onCopyPrompt} />
       <div className="pm-overview-grid compact">
         <Info label="Security Status" value={formatStatus(governance.security)} />
         <Info label="Data Status" value={formatStatus(governance.data)} />
@@ -882,6 +960,17 @@ function ProjectManagementGovernance({ dashboard }) {
           }, ["phase", "status", "evidence", "blockingGaps"]))}
         />
       )}
+    </div>
+  );
+}
+
+function ProjectManagementPromptAction({ label, copied, onCopy }) {
+  return (
+    <div className="pm-panel-action">
+      <button className="secondary-action" type="button" onClick={onCopy}>
+        {copied ? <Check size={15} /> : <Copy size={15} />}
+        {copied ? "Copied" : label}
+      </button>
     </div>
   );
 }
@@ -1431,11 +1520,115 @@ function activityValidation(entry) {
   return entry?.validationNotes ?? entry?.validation ?? entry?.validationStatus ?? "";
 }
 
+async function copyTextToClipboard(content) {
+  try {
+    await navigator.clipboard.writeText(content);
+    return;
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = content;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    textarea.style.top = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textarea);
+  }
+}
+
 function projectManagementRow(source, fields) {
   return fields.map((field) => {
     const value = source?.[field];
     return Array.isArray(value) ? listValue(value) : fieldValue(value);
   });
+}
+
+function scopedProjectManagementPrompt(project, projectManagement, scope) {
+  const dashboard = projectManagement.dashboard || {};
+  const projectName = dashboard.project?.name || project.name || "Needs Manual Review";
+  const repositoryPath = project.path || dashboard.project?.path || "Needs Manual Review";
+  const summary = dashboard.summary || {};
+  const scopeConfigs = {
+    backlog: {
+      title: "Backlog",
+      sourceFile: "docs/project-management/backlog.md",
+      dashboardField: "backlog",
+      objective: "Review, validate, and update backlog items so they are actionable, prioritized, and grounded in repository evidence.",
+      requiredWork: [
+        "Review existing backlog rows, repository code, README files, docs, tests, and recent project-management activity.",
+        "Add or update backlog items only when there is source evidence or a clear manual-review placeholder is needed.",
+        "For every item, include priority, status, type, source notes, and acceptance criteria.",
+      ],
+    },
+    bugs: {
+      title: "Bugs",
+      sourceFile: "docs/project-management/bugs.md",
+      dashboardField: "bugs",
+      objective: "Review, validate, and update the bug register without inventing defects that are not supported by evidence.",
+      requiredWork: [
+        "Review existing bug rows, test failures, runtime notes, issue documentation, logs, and source-code evidence.",
+        "Classify severity, priority, status, affected workflow, evidence, and recommended next action for each bug.",
+        "Use Needs manual review when a suspected defect lacks enough evidence to confirm.",
+      ],
+    },
+    governance: {
+      title: "Governance",
+      sourceFile: "docs/project-management/lifecycle-status.md",
+      dashboardField: "governance",
+      objective: "Review and update lifecycle and governance status for security, data, testing, and release readiness.",
+      requiredWork: [
+        "Review the repository, docs, scripts, tests, deployment notes, and existing project-management artifacts.",
+        "Update lifecycle phase evidence, blocking gaps, gate status, and governance readiness fields.",
+        "Use Needs manual review for unknown, stale, conflicting, or incomplete governance information.",
+      ],
+    },
+  };
+  const config = scopeConfigs[scope] || scopeConfigs.backlog;
+  const rows = dashboard[config.dashboardField];
+  const rowSummary = Array.isArray(rows)
+    ? rows.slice(0, 8).map((row) => `- ${fieldValue(row?.id)}: ${fieldValue(row?.title || row?.phase)} (${fieldValue(row?.status)})`).join("\n") || "- No current rows. Needs manual review."
+    : "- Dashboard data missing or invalid. Needs manual review.";
+
+  return `# Codex Project Management ${config.title} Update
+
+Repository: \`${repositoryPath}\`
+Project: \`${projectName}\`
+Project Management Source: \`${config.sourceFile}\`
+Dashboard: \`docs/project-management/project-dashboard.json\`
+
+Use the Codex Operations Library as the source of truth. RidgePath Forge displays the project-management read model only; Codex owns repository analysis and artifact updates.
+
+## Objective
+
+${config.objective}
+
+## Current Dashboard Context
+
+- Current Phase: ${fieldValue(summary.currentPhase)}
+- Lifecycle Status: ${formatStatus(summary.lifecycleStatus)}
+- Governance Status: ${formatStatus(summary.governanceStatus)}
+- Next Codex Action: ${fieldValue(summary.nextCodexAction)}
+
+## Current ${config.title} Items
+
+${rowSummary}
+
+## Required Work
+
+${config.requiredWork.map((item, index) => `${index + 1}. ${item}`).join("\n")}
+${config.requiredWork.length + 1}. Update \`${config.sourceFile}\` as the Markdown source of truth.
+${config.requiredWork.length + 2}. Update \`docs/project-management/project-dashboard.json\` so RidgePath Forge reflects the current ${config.title.toLowerCase()} state.
+${config.requiredWork.length + 3}. Add an entry to \`docs/project-management/codex-activity.md\` describing the work, evidence reviewed, files changed, and validation result.
+
+## Validation
+
+- Verify edited Markdown files are internally consistent.
+- Verify \`project-dashboard.json\` is valid JSON.
+- Verify dashboard \`metadata.sourceFiles\` references the source files used.
+- Use \`Needs manual review\` instead of guessing when evidence is incomplete.
+`;
 }
 
 function bugGroup(status) {

@@ -789,6 +789,11 @@ h3 {
   grid-template-columns: minmax(0, 1.2fr) minmax(160px, auto) auto;
 }
 
+.resource-row.endpoint-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, auto) auto;
+}
+
 .resource-meta {
   min-width: 0;
   display: flex;
@@ -872,6 +877,27 @@ h3 {
 .collision {
   background: var(--color-background-warning);
   color: var(--color-text-warning);
+}
+
+.endpoint-badges {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.endpoint-badges > span:not(.collision) {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: var(--color-background-page);
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+  font-weight: 800;
 }
 
 .pm-strip {
@@ -1057,6 +1083,11 @@ h3 {
 .pm-timeline {
   display: grid;
   gap: 8px;
+}
+
+.pm-panel-action {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .pm-panel h4,
@@ -1630,7 +1661,8 @@ h3 {
     grid-template-columns: 1fr;
   }
 
-  .resource-row {
+  .resource-row,
+  .resource-row.endpoint-row {
     display: flex;
     align-items: stretch;
     flex-direction: column;
