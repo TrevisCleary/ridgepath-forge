@@ -2,7 +2,7 @@
 
 ## Files Modified
 
-Local Project Launcher:
+RidgePath Forge:
 
 - `launcher-settings.json`
 - `server/index.js`

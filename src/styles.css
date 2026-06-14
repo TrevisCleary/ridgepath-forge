@@ -77,7 +77,8 @@ textarea {
   box-shadow: 0 12px 28px rgba(7, 31, 62, 0.08);
 }
 
-.action-error {
+.action-error,
+.action-notice {
   position: fixed;
   top: 134px;
   left: 50%;
@@ -97,12 +98,20 @@ textarea {
   font-weight: 700;
 }
 
-.action-error span {
+.action-notice {
+  border-color: var(--color-border-success);
+  background: var(--color-background-success);
+  color: var(--color-text-success);
+}
+
+.action-error span,
+.action-notice span {
   min-width: 0;
   flex: 1 1 auto;
 }
 
-.action-error button {
+.action-error button,
+.action-notice button {
   width: 26px;
   height: 26px;
   flex: 0 0 auto;
@@ -114,6 +123,10 @@ textarea {
   background: var(--color-background-primary);
   color: inherit;
   cursor: pointer;
+}
+
+.action-notice button {
+  border-color: var(--color-border-success);
 }
 
 .brand {

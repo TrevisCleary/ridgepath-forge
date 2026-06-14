@@ -32,7 +32,7 @@ This pass updates user-facing product identity while preserving compatibility-se
 
 | File or Pattern | Reason |
 | --- | --- |
-| Repository folder `local-project-launcher` | Workspace path rename would be a separate compatibility-sensitive operation. |
+| Repository folder `ridgepath-forge` | Workspace path rename would be a separate compatibility-sensitive operation. |
 | `launcher-settings.json` | Configuration file name is an internal compatibility surface used by the server. |
 | `docs/launcher-workflow-contract.md` file name | File path is already referenced by docs and settings; content was rebranded instead. |
 | `docs/launcher-handoff.md` generated artifact path | Operations Library templates and workflow outputs currently reference this compatibility path. |
@@ -52,11 +52,11 @@ This pass updates user-facing product identity while preserving compatibility-se
 - Keep lowercase `launcher` where it describes a technical runtime role rather than the product brand.
 - Keep compatibility names for settings, environment variables, hostnames, template paths, and generated artifact paths.
 - Rebrand generated starter project text so new projects say they were registered by RidgePath Forge.
-- Rebrand Project Management initialization prompts so Codex is instructed to verify the RidgePath Forge dashboard, not the old Local Project Launcher dashboard.
+- Rebrand Project Management initialization prompts so Codex is instructed to verify the RidgePath Forge dashboard, not the legacy dashboard branding.
 
 ## Future Branding Opportunities
 
-- Rename the repository folder and any external shortcuts after confirming no automation depends on `local-project-launcher`.
+- Rename the repository folder and any external shortcuts after confirming no automation depends on `ridgepath-forge`.
 - Rename `launcher-settings.json` to a RidgePath Forge settings filename with a migration/fallback reader.
 - Add new Operations Library template aliases for RidgePath Forge handoff paths while retaining legacy template compatibility.
 - Replace `/assets/local-launcher-logo.png` with a RidgePath Forge-branded image asset and update favicon artwork.

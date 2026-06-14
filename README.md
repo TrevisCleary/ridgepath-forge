@@ -37,7 +37,8 @@ npm run dev
 - Hides Open, Restart, and Stop project actions unless the selected project is running.
 - Shows a Port Map modal from the top KPI row with discovered ports and open/closed status.
 - Runs `git pull --ff-only` for a selected project from the Repository Git Sync button when a GitHub remote exists.
-- Registers new starter projects with automatic port assignment, Operations Library handoff docs, immediate start, and normal auto-discovery.
+- Links a selected project into the RidgePath demo portal from the Add to Demo Portal button.
+- Registers new starter projects with automatic port assignment, Operations Library handoff docs, a themed starter 404/not-found route, immediate start, and normal auto-discovery.
 - Shows port collision warnings, repository branch/dirty/sync status, and a per-project activity timeline.
 - Infers work vs. personal projects from the GitHub remote owner.
 - Opens project folders in File Explorer from the displayed project path.
@@ -48,6 +49,21 @@ Projects that are already running outside RidgePath Forge are treated as running
 
 Use Take Over on an externally running project to stop the listener on the assigned port and restart the project as a RidgePath Forge-managed process.
 
+## Demo Portal Integration
+
+Use Add to Demo Portal from a selected project's Overview panel to create or update a RidgePath demo portal access record.
+
+When `DEMO_DATABASE_URL` or `DATABASE_URL` is set, Forge writes to the Neon-backed demo registry. Without a database URL, it writes to the RidgePath website fallback file at `data/demo-clients.local.json`.
+
+Configure the Neon connection for the current PowerShell session:
+
+```powershell
+$env:DEMO_DATABASE_URL = "<neon-pooled-connection-string>"
+npm run dev
+```
+
+The action stores a generated password hash, local path, repository URL, branch, latest commit, deployment/local URL, project phase, progress estimate, and update note. The generated client password is shown once in the success notice when a new record is created.
+
 ## Project Registration
 
 Use Add Project to create a minimal runnable project under `PROJECTS_ROOT`. RidgePath Forge assigns the next available primary port by audience:
@@ -56,7 +72,7 @@ Use Add Project to create a minimal runnable project under `PROJECTS_ROOT`. Ridg
 - RidgePath application ports start at `3151`.
 - Personal application ports start at `3201`.
 
-Registration writes `bootstrap-config.md` and `docs/operations-library-handoff.md` into the new project. Those files point back to the Codex Operations Library and preserve the next workflow entry points. RidgePath Forge starts the project immediately, then the normal 5-second discovery cycle keeps it visible.
+Registration writes `bootstrap-config.md` and `docs/operations-library-handoff.md` into the new project. Those files point back to the Codex Operations Library and preserve the next workflow entry points. Generated starter sites include a custom 404 response that shares the starter theme; for website projects, keep it aligned with the final site theme and include it in feature review or release-readiness evidence. RidgePath Forge starts the project immediately, then the normal 5-second discovery cycle keeps it visible.
 
 ## Refresh Cadence
 

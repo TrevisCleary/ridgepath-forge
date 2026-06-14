@@ -3,6 +3,8 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import net from "node:net";
 import path from "node:path";
+import crypto from "node:crypto";
+import { neon } from "@neondatabase/serverless";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
@@ -19,6 +21,7 @@ const OPERATIONS_LIBRARY_ROOT = process.env.OPERATIONS_LIBRARY_ROOT || "C:\\Deve
 const MANAGED = new Map();
 const LOG_LIMIT = 120;
 const ACTIVITY_LIMIT = 200;
+let demoPortalSql = null;
 const DEFAULT_SETTINGS = {
   operationsLibrary: {
     root: OPERATIONS_LIBRARY_ROOT,
@@ -115,6 +118,23 @@ const DEFAULT_SETTINGS = {
       "scripts",
       "tests",
     ],
+  },
+  portfolioIntegration: {
+    projectId: "trevis-portfolio",
+    root: "C:\\Development\\Projects\\trevis-portfolio",
+    projectIdeasFile: "src/data/projectIdeas.json",
+    blogPostsFile: "src/data/blogPosts.json",
+    draftScreenshotsDirectory: "public/portfolio-drafts",
+    maxScreenshots: 4,
+    openAiSecretFile: "openai-secret.txt",
+    openAiModel: "gpt-5.5",
+  },
+  demoPortalIntegration: {
+    root: "C:\\Development\\Projects\\ridgepath-technologies-website",
+    clientsFile: "data/demo-clients.local.json",
+    publicBaseUrl: "http://localhost:3203/demos",
+    passwordLength: 18,
+    defaultExpiryDays: 45,
   },
 };
 const WORK_OWNERS = new Set(
@@ -790,6 +810,917 @@ function liveProjectUrl(pkg = {}, override = {}) {
   return candidates.find((candidate) => isHttpUrl(candidate)) || "";
 }
 
+function portfolioIntegrationSettings(settings) {
+  const configured = settings.portfolioIntegration || {};
+  return {
+    ...DEFAULT_SETTINGS.portfolioIntegration,
+    ...configured,
+    root: path.resolve(process.env.PORTFOLIO_PROJECT_ROOT || configured.root || DEFAULT_SETTINGS.portfolioIntegration.root),
+  };
+}
+
+function demoPortalIntegrationSettings(settings) {
+  const configured = settings.demoPortalIntegration || {};
+  return {
+    ...DEFAULT_SETTINGS.demoPortalIntegration,
+    ...configured,
+    root: path.resolve(process.env.DEMO_PORTAL_PROJECT_ROOT || configured.root || DEFAULT_SETTINGS.demoPortalIntegration.root),
+  };
+}
+
+function sentence(value, fallback) {
+  const clean = String(value || "").replace(/\s+/g, " ").trim();
+  return clean || fallback;
+}
+
+function titleFromSlug(value) {
+  return String(value || "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function uniqueList(values) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function displayProjectTitle(project) {
+  const raw = sentence(project.name, project.folderName || project.id);
+  return /^[a-z0-9][a-z0-9-_]+$/i.test(raw) && /[-_]/.test(raw) ? titleFromSlug(raw) : raw;
+}
+
+function ensureSentence(value) {
+  const clean = sentence(value, "Needs manual review");
+  return /[.!?]$/.test(clean) ? clean : `${clean}.`;
+}
+
+function sanitizeFileName(value) {
+  return slug(value || "page") || "page";
+}
+
+function portfolioPrimaryUrl(project) {
+  const services = Array.isArray(project.services) ? project.services : [];
+  const primary = services.find((service) => service.kind === "primary" && service.port) || services.find((service) => service.port);
+  if (!primary?.port) return "";
+  const canOpen = project.status === "running" && (primary.managedRunning || primary.portStatus === "open");
+  return canOpen ? `http://localhost:${primary.port}` : "";
+}
+
+function normalizeSameOriginUrl(value, origin) {
+  try {
+    const url = new URL(value, origin);
+    if (url.origin !== origin) return "";
+    url.hash = "";
+    return url.href;
+  } catch {
+    return "";
+  }
+}
+
+function screenshotTitle(url, baseUrl) {
+  const parsed = new URL(url);
+  if (url === baseUrl || parsed.pathname === "/") return "Home";
+  return titleFromSlug(parsed.pathname.split("/").filter(Boolean).at(-1) || "Page");
+}
+
+function upsertByKey(items, key, value, entry) {
+  const index = items.findIndex((item) => item?.[key] === value);
+  if (index >= 0) {
+    const existing = items[index];
+    items[index] = {
+      ...existing,
+      ...entry,
+      importedAt: existing.importedAt || entry.importedAt,
+      publish: existing.publish ?? entry.publish,
+    };
+    return { items, created: false };
+  }
+  items.push(entry);
+  return { items, created: true };
+}
+
+async function readOpenAiKey(portfolio) {
+  if (process.env.OPENAI_API_KEY?.trim()) return process.env.OPENAI_API_KEY.trim();
+  const configuredPath = process.env.OPENAI_API_KEY_FILE || portfolio.openAiSecretFile || "openai-secret.txt";
+  const secretPath = path.isAbsolute(configuredPath) ? configuredPath : path.join(portfolio.root, normalizeRelativePath(configuredPath));
+  try {
+    const value = (await fs.readFile(secretPath, "utf8")).trim();
+    return value || "";
+  } catch {
+    return "";
+  }
+}
+
+function responseOutputText(data) {
+  if (typeof data?.output_text === "string") return data.output_text;
+  const chunks = [];
+  for (const item of data?.output || []) {
+    for (const content of item?.content || []) {
+      if (typeof content?.text === "string") chunks.push(content.text);
+      if (typeof content?.output_text === "string") chunks.push(content.output_text);
+    }
+  }
+  return chunks.join("\n").trim();
+}
+
+function portfolioContentSchema() {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "title",
+      "summary",
+      "description",
+      "portfolioAngle",
+      "tags",
+      "blogTitle",
+      "blogExcerpt",
+      "blogSections",
+      "seoTitle",
+      "seoDescription",
+      "reviewNotes",
+    ],
+    properties: {
+      title: { type: "string" },
+      summary: { type: "string" },
+      description: { type: "string" },
+      portfolioAngle: { type: "string" },
+      tags: { type: "array", items: { type: "string" }, maxItems: 8 },
+      blogTitle: { type: "string" },
+      blogExcerpt: { type: "string" },
+      blogSections: {
+        type: "array",
+        minItems: 3,
+        maxItems: 5,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["heading", "body"],
+          properties: {
+            heading: { type: "string" },
+            body: { type: "string" },
+          },
+        },
+      },
+      seoTitle: { type: "string" },
+      seoDescription: { type: "string" },
+      reviewNotes: {
+        type: "array",
+        items: { type: "string" },
+        maxItems: 8,
+      },
+    },
+  };
+}
+
+function safeProjectContext(project, projectIdea, capture) {
+  const dashboard = project.projectManagement?.dashboard || {};
+  return {
+    project: {
+      id: project.id,
+      title: projectIdea.title,
+      description: project.description,
+      audience: project.audience,
+      framework: project.framework,
+      owner: project.owner,
+      repositoryOwner: githubOwner(project.origin),
+      status: project.status,
+      services: (project.services || []).map((service) => ({
+        label: service.label,
+        kind: service.kind,
+        framework: service.framework,
+        port: service.port,
+        script: service.script,
+      })),
+    },
+    projectManagement: {
+      currentPhase: dashboard.summary?.currentPhase,
+      lifecycleStatus: dashboard.summary?.lifecycleStatus,
+      governanceStatus: dashboard.summary?.governanceStatus,
+      nextCodexAction: dashboard.summary?.nextCodexAction,
+      counts: dashboard.counts,
+      backlog: Array.isArray(dashboard.backlog)
+        ? dashboard.backlog.slice(0, 8).map((item) => ({
+          id: item.id,
+          type: item.type,
+          title: item.title,
+          priority: item.priority,
+          status: item.status,
+        }))
+        : [],
+      bugs: Array.isArray(dashboard.bugs)
+        ? dashboard.bugs.slice(0, 5).map((bug) => ({
+          id: bug.id,
+          title: bug.title,
+          severity: bug.severity,
+          status: bug.status,
+        }))
+        : [],
+    },
+    screenshots: {
+      status: capture.status,
+      count: capture.screenshots.length,
+      routes: capture.screenshots.map((screenshot) => ({
+        title: screenshot.title,
+        url: screenshot.url,
+      })),
+      note: capture.reason || "",
+    },
+  };
+}
+
+async function generatePortfolioContent(project, portfolio, projectIdea, blogPost, capture) {
+  const apiKey = await readOpenAiKey(portfolio);
+  if (!apiKey) {
+    return {
+      status: "skipped",
+      message: "No OpenAI API key was available to the launcher server.",
+      projectIdea,
+      blogPost,
+    };
+  }
+  if (typeof fetch !== "function") {
+    return {
+      status: "failed",
+      message: "This Node runtime does not provide fetch for OpenAI API calls.",
+      projectIdea,
+      blogPost,
+    };
+  }
+
+  const context = safeProjectContext(project, projectIdea, capture);
+  const model = process.env.OPENAI_MODEL || portfolio.openAiModel || "gpt-5.5";
+  const body = {
+    model,
+    instructions: [
+      "You write public-safe portfolio and technical blog draft copy for a healthcare technology leader.",
+      "Use only the provided metadata. Do not invent metrics, client names, patient data, customer names, credentials, URLs, internal hostnames, or claims not supported by the context.",
+      "Keep copy polished, specific, and reviewable. If information is missing, frame it as a draft note or manual-review need.",
+      "Do not mark anything as published."
+    ].join(" "),
+    input: `Create draft portfolio and blog copy from this RidgePath Forge project context:\n${JSON.stringify(context, null, 2)}`,
+    reasoning: { effort: "low" },
+    text: {
+      verbosity: "low",
+      format: {
+        type: "json_schema",
+        name: "portfolio_content_draft",
+        strict: true,
+        schema: portfolioContentSchema(),
+      },
+    },
+  };
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const message = data?.error?.message || `OpenAI request failed with status ${response.status}.`;
+      return { status: "failed", message, projectIdea, blogPost };
+    }
+
+    const text = responseOutputText(data);
+    const generated = JSON.parse(text);
+    const generatedTags = uniqueList([...(projectIdea.tags || []), ...(generated.tags || [])]).slice(0, 10);
+    const updatedProjectIdea = {
+      ...projectIdea,
+      title: sentence(generated.title, projectIdea.title),
+      summary: sentence(generated.summary, projectIdea.summary),
+      description: sentence(generated.description, projectIdea.description),
+      portfolioAngle: sentence(generated.portfolioAngle, projectIdea.portfolioAngle),
+      tags: generatedTags,
+      seoTitle: sentence(generated.seoTitle, ""),
+      seoDescription: sentence(generated.seoDescription, ""),
+      aiStatus: "generated",
+      aiModel: model,
+      aiGeneratedAt: new Date().toISOString(),
+      aiReviewNotes: Array.isArray(generated.reviewNotes) ? generated.reviewNotes : [],
+    };
+    const updatedBlogPost = {
+      ...blogPost,
+      title: sentence(generated.blogTitle, blogPost.title),
+      excerpt: sentence(generated.blogExcerpt, blogPost.excerpt),
+      tags: generatedTags,
+      sections: Array.isArray(generated.blogSections) && generated.blogSections.length
+        ? generated.blogSections.map((section) => ({
+          heading: sentence(section.heading, "Needs manual review"),
+          body: sentence(section.body, "Needs manual review"),
+        }))
+        : blogPost.sections,
+      seoTitle: sentence(generated.seoTitle, ""),
+      seoDescription: sentence(generated.seoDescription, ""),
+      aiStatus: "generated",
+      aiModel: model,
+      aiGeneratedAt: updatedProjectIdea.aiGeneratedAt,
+      aiReviewNotes: updatedProjectIdea.aiReviewNotes,
+    };
+
+    return {
+      status: "generated",
+      message: "OpenAI generated draft project and blog copy.",
+      projectIdea: updatedProjectIdea,
+      blogPost: updatedBlogPost,
+    };
+  } catch (error) {
+    return {
+      status: "failed",
+      message: error.message || "OpenAI content generation failed.",
+      projectIdea,
+      blogPost,
+    };
+  }
+}
+
+function projectPortfolioDraft(project) {
+  const now = new Date().toISOString();
+  const date = now.slice(0, 10);
+  const title = displayProjectTitle(project);
+  const description = sentence(project.description, `${title} is an imported project idea awaiting portfolio review.`);
+  const dashboard = project.projectManagement?.dashboard || {};
+  const summary = dashboard.summary || {};
+  const counts = dashboard.counts || {};
+  const phase = sentence(summary.currentPhase, "Needs manual review");
+  const nextAction = sentence(summary.nextCodexAction, "Needs manual review");
+  const safeOrigin = isHttpUrl(project.origin) ? project.origin : project.origin?.replace(/^git@github\.com:/i, "https://github.com/").replace(/\.git$/i, "") || "";
+  const blogSlug = `${project.id}-project-notes`;
+  const tags = uniqueList([
+    project.framework,
+    project.audience,
+    project.owner,
+    phase === "Needs manual review" ? "" : phase,
+  ]);
+
+  return {
+    projectIdea: {
+      id: `idea-${project.id}`,
+      sourceProjectId: project.id,
+      slug: project.id,
+      title,
+      summary: description,
+      description,
+      image: "",
+      screenshots: [],
+      screenshotStatus: "pending",
+      screenshotNotes: "Screenshots are captured from the running local app when available.",
+      publish: false,
+      reviewStatus: "Needs manual review",
+      importedAt: now,
+      updatedAt: now,
+      audience: project.audience,
+      framework: project.framework,
+      owner: project.owner || "",
+      repositoryUrl: safeOrigin,
+      liveUrl: project.liveUrl || "",
+      localPath: project.path,
+      lifecyclePhase: phase,
+      nextAction,
+      portfolioAngle: `${title} may become a portfolio case study after public-safe outcomes, screenshots, architecture notes, and implementation details are reviewed.`,
+      tags,
+      blogSlug,
+      publicationChecklist: [
+        "Confirm this project can be discussed publicly.",
+        "Scrub internal names, customer data, credentials, hostnames, tenant identifiers, and private URLs.",
+        "Add public-safe screenshots or diagrams.",
+        "Summarize the business problem, technical approach, and measurable outcome.",
+        "Set publish to true only after review."
+      ]
+    },
+    blogPost: {
+      id: `blog-${project.id}`,
+      sourceProjectId: project.id,
+      slug: blogSlug,
+      projectSlug: project.id,
+      title: `Project Notes: ${title}`,
+      excerpt: `A draft writeup about ${title}, imported from RidgePath Forge for review and expansion.`,
+      date,
+      publish: false,
+      reviewStatus: "Needs manual review",
+      importedAt: now,
+      updatedAt: now,
+      tags,
+      sections: [
+        {
+          heading: "What this project is about",
+          body: description
+        },
+        {
+          heading: "Current state",
+          body: `RidgePath Forge lists this project as ${project.status || "Needs manual review"} with ${project.framework || "an unknown framework"}. Project-management phase: ${phase}. Open backlog: ${counts.backlogOpen ?? "Needs manual review"}. Open bugs: ${counts.bugsOpen ?? "Needs manual review"}.`
+        },
+        {
+          heading: "What to write next",
+          body: `Next action from project management: ${ensureSentence(nextAction)} Before publishing, convert this draft into a public-safe story with problem context, design choices, implementation tradeoffs, screenshots, and validation evidence.`
+        }
+      ]
+    }
+  };
+}
+
+async function capturePortfolioScreenshots(project, portfolio, projectIdea) {
+  const baseUrl = portfolioPrimaryUrl(project);
+  if (!baseUrl) {
+    return {
+      status: "skipped",
+      reason: "Project is not running on an assigned primary port. Start it in RidgePath Forge before capturing portfolio screenshots.",
+      screenshots: [],
+    };
+  }
+
+  let browser;
+  try {
+    const { chromium } = await import("playwright");
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
+    await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
+    await page.waitForTimeout(1200);
+
+    const origin = new URL(baseUrl).origin;
+    const hrefs = await page.evaluate(() => Array.from(document.querySelectorAll("a[href]"), (link) => link.href));
+    const urls = uniqueList([
+      baseUrl,
+      ...hrefs.map((href) => normalizeSameOriginUrl(href, origin)),
+    ])
+      .filter(Boolean)
+      .filter((url) => {
+        const parsed = new URL(url);
+        return !/\.(pdf|zip|docx?|xlsx?|png|jpe?g|gif|svg|ico|mp4|mov)$/i.test(parsed.pathname);
+      })
+      .slice(0, Number(portfolio.maxScreenshots || 4));
+
+    const outputDirectory = path.join(portfolio.root, normalizeRelativePath(portfolio.draftScreenshotsDirectory), projectIdea.slug);
+    await fs.mkdir(outputDirectory, { recursive: true });
+
+    const screenshots = [];
+    for (const [index, url] of urls.entries()) {
+      const title = screenshotTitle(url, baseUrl);
+      const fileName = `${String(index + 1).padStart(2, "0")}-${sanitizeFileName(title)}.png`;
+      const outputPath = path.join(outputDirectory, fileName);
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+      await page.waitForTimeout(1200);
+      await page.screenshot({ path: outputPath, fullPage: true });
+      screenshots.push({
+        title,
+        url,
+        image: `/${normalizeRelativePath(path.join(normalizeRelativePath(portfolio.draftScreenshotsDirectory).replace(/^public\//, ""), projectIdea.slug, fileName))}`,
+        capturedAt: new Date().toISOString(),
+        publishReady: false,
+      });
+    }
+
+    return {
+      status: screenshots.length ? "captured" : "skipped",
+      reason: screenshots.length ? "" : "No screenshot routes were found.",
+      screenshots,
+    };
+  } catch (error) {
+    return {
+      status: "failed",
+      reason: error.message || "Playwright screenshot capture failed.",
+      screenshots: [],
+    };
+  } finally {
+    if (browser) await browser.close();
+  }
+}
+
+async function createPortfolioDraft(project) {
+  const settings = await launcherSettings();
+  const portfolio = portfolioIntegrationSettings(settings);
+  const projectIdeasPath = path.join(portfolio.root, normalizeRelativePath(portfolio.projectIdeasFile));
+  const blogPostsPath = path.join(portfolio.root, normalizeRelativePath(portfolio.blogPostsFile));
+
+  if (!(await pathExists(portfolio.root))) {
+    throw new Error(`Portfolio project root does not exist: ${portfolio.root}`);
+  }
+  if (!(await pathExists(projectIdeasPath))) {
+    throw new Error(`Portfolio project ideas file does not exist: ${projectIdeasPath}`);
+  }
+  if (!(await pathExists(blogPostsPath))) {
+    throw new Error(`Portfolio blog posts file does not exist: ${blogPostsPath}`);
+  }
+
+  const existingIdeas = await readJson(projectIdeasPath, []);
+  const existingPosts = await readJson(blogPostsPath, []);
+  if (!Array.isArray(existingIdeas)) throw new Error("Portfolio project ideas file must contain a JSON array.");
+  if (!Array.isArray(existingPosts)) throw new Error("Portfolio blog posts file must contain a JSON array.");
+
+  const draft = projectPortfolioDraft(project);
+  const capture = await capturePortfolioScreenshots(project, portfolio, draft.projectIdea);
+  draft.projectIdea.screenshotStatus = capture.status;
+  draft.projectIdea.screenshotNotes = capture.reason || "Screenshots captured from the running local app. Review before publishing.";
+  draft.projectIdea.screenshots = capture.screenshots;
+  if (capture.screenshots[0]?.image) draft.projectIdea.image = capture.screenshots[0].image;
+  const existingIdea = existingIdeas.find((idea) => idea?.sourceProjectId === project.id);
+  if (!capture.screenshots.length && Array.isArray(existingIdea?.screenshots) && existingIdea.screenshots.length) {
+    draft.projectIdea.screenshots = existingIdea.screenshots;
+    draft.projectIdea.image = existingIdea.image || existingIdea.screenshots[0]?.image || "";
+    draft.projectIdea.screenshotNotes = `${draft.projectIdea.screenshotNotes} Existing draft screenshots were preserved.`;
+  }
+
+  const effectiveCapture = {
+    ...capture,
+    screenshots: draft.projectIdea.screenshots,
+    reason: draft.projectIdea.screenshotNotes,
+  };
+  const ai = await generatePortfolioContent(project, portfolio, draft.projectIdea, draft.blogPost, effectiveCapture);
+  draft.projectIdea = {
+    ...ai.projectIdea,
+    aiStatus: ai.projectIdea.aiStatus || ai.status,
+    aiMessage: ai.message,
+  };
+  draft.blogPost = {
+    ...ai.blogPost,
+    aiStatus: ai.blogPost.aiStatus || ai.status,
+    aiMessage: ai.message,
+  };
+
+  const effectiveScreenshots = Array.isArray(draft.projectIdea.screenshots) ? draft.projectIdea.screenshots : [];
+  draft.blogPost.sections.splice(Math.min(2, draft.blogPost.sections.length), 0, {
+    heading: "Screenshots captured for review",
+    body: effectiveScreenshots.length
+      ? `RidgePath Forge captured ${effectiveScreenshots.length} local screenshot draft${effectiveScreenshots.length === 1 ? "" : "s"} for portfolio review. These images remain draft assets until reviewed and promoted into public project media.`
+      : `No screenshots were captured. ${capture.reason}`,
+  });
+  const ideasResult = upsertByKey(existingIdeas, "sourceProjectId", project.id, draft.projectIdea);
+  const postsResult = upsertByKey(existingPosts, "sourceProjectId", project.id, draft.blogPost);
+
+  await writeJson(projectIdeasPath, ideasResult.items);
+  await writeJson(blogPostsPath, postsResult.items);
+  await appendActivity(
+    project.id,
+    "portfolio-draft",
+    `${ideasResult.created ? "Created" : "Updated"} portfolio draft and ${postsResult.created ? "created" : "updated"} blog draft`,
+    {
+      portfolioRoot: portfolio.root,
+      projectIdeasFile: portfolio.projectIdeasFile,
+      blogPostsFile: portfolio.blogPostsFile,
+      projectSlug: draft.projectIdea.slug,
+      blogSlug: draft.blogPost.slug,
+      screenshotStatus: capture.status,
+      screenshotCount: capture.screenshots.length,
+      aiStatus: ai.status,
+    },
+  );
+
+  return {
+    ok: true,
+    createdProjectIdea: ideasResult.created,
+    createdBlogPost: postsResult.created,
+    portfolioRoot: portfolio.root,
+    projectIdea: draft.projectIdea,
+    blogPost: draft.blogPost,
+    screenshotStatus: capture.status,
+    screenshotCount: capture.screenshots.length,
+    screenshotMessage: capture.reason || "Screenshots captured for draft review.",
+    aiStatus: ai.status,
+    aiMessage: ai.message,
+  };
+}
+
+function generateDemoPassword(length = 18) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  const bytes = crypto.randomBytes(Math.max(Number(length) || 18, 12));
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
+}
+
+function hashDemoPassword(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(password, salt, 32).toString("hex");
+  return `scrypt:${salt}:${hash}`;
+}
+
+function demoPortalPublicUrl(settings, slugValue) {
+  const base = String(settings.publicBaseUrl || DEFAULT_SETTINGS.demoPortalIntegration.publicBaseUrl).replace(/\/+$/, "");
+  return `${base}/${slugValue}`;
+}
+
+function projectRepositoryUrl(project) {
+  if (isHttpUrl(project.origin)) return project.origin.replace(/\.git$/i, "");
+  return project.origin?.replace(/^git@github\.com:/i, "https://github.com/").replace(/\.git$/i, "") || "";
+}
+
+function projectDemoSiteUrl(project) {
+  if (isHttpUrl(project.liveUrl)) return project.liveUrl;
+  const localUrl = portfolioPrimaryUrl(project);
+  return localUrl || "";
+}
+
+function demoProgressFromDashboard(project) {
+  const dashboard = project.projectManagement?.dashboard || {};
+  const counts = dashboard.counts || {};
+  const open = Number(counts.backlogOpen || 0) + Number(counts.bugsOpen || 0);
+  const sprintCommitted = Number(counts.sprintCommitted || 0);
+  if (!open && sprintCommitted) return 75;
+  if (!open) return 50;
+  return Math.max(20, Math.min(70, 70 - (open * 4)));
+}
+
+function demoUpdateForProject(project, timestamp) {
+  const dashboard = project.projectManagement?.dashboard || {};
+  const summary = dashboard.summary || {};
+  return {
+    id: `forge-link-${timestamp.slice(0, 10)}`,
+    title: "Project linked from RidgePath Forge",
+    summary: sentence(
+      summary.nextCodexAction,
+      `${displayProjectTitle(project)} was linked to the RidgePath demo portal from Forge.`,
+    ),
+    status: sentence(summary.currentPhase, "Linked"),
+    date: timestamp.slice(0, 10),
+  };
+}
+
+function mergeDemoSite(existingSites, site) {
+  const sites = Array.isArray(existingSites) ? [...existingSites] : [];
+  const index = sites.findIndex((item) => item?.id === site.id);
+  if (index >= 0) {
+    sites[index] = {
+      ...sites[index],
+      ...site,
+    };
+    return sites;
+  }
+  return [site, ...sites];
+}
+
+function mergeDemoUpdate(existingUpdates, update) {
+  const updates = Array.isArray(existingUpdates) ? [...existingUpdates] : [];
+  const index = updates.findIndex((item) => item?.id === update.id);
+  if (index >= 0) {
+    updates[index] = {
+      ...updates[index],
+      ...update,
+    };
+    return updates;
+  }
+  return [update, ...updates].slice(0, 12);
+}
+
+function demoPortalDatabaseUrl() {
+  return process.env.DEMO_DATABASE_URL || process.env.DATABASE_URL || "";
+}
+
+function demoPortalDb() {
+  const databaseUrl = demoPortalDatabaseUrl();
+  if (!databaseUrl) return null;
+  demoPortalSql ??= neon(databaseUrl);
+  return demoPortalSql;
+}
+
+async function existingDemoClientFromDb(sql, projectId, slugValue) {
+  const rows = await sql`
+    select *
+    from demo_clients
+    where slug = ${slugValue} or source_project_id = ${projectId}
+    order by updated_at desc
+    limit 1
+  `;
+  return rows[0] || null;
+}
+
+async function upsertDemoPortalDatabaseRecord(project, demoPortal, record, site, update, generatedPassword) {
+  const sql = demoPortalDb();
+  const created = !record.existingClient;
+
+  await sql`
+    insert into demo_clients (
+      slug,
+      source_project_id,
+      client_name,
+      status,
+      password_hash,
+      local_path,
+      repository_url,
+      branch,
+      latest_commit,
+      deployment_url,
+      public_demo_url,
+      expires_at,
+      linked_from_forge_at,
+      updated_at
+    )
+    values (
+      ${record.slug},
+      ${record.sourceProjectId},
+      ${record.clientName},
+      ${record.status},
+      ${record.passwordHash},
+      ${record.localPath},
+      ${record.repositoryUrl},
+      ${record.branch},
+      ${record.latestCommit},
+      ${record.deploymentUrl},
+      ${record.publicDemoUrl},
+      ${record.expiresAt},
+      ${record.linkedFromForgeAt},
+      now()
+    )
+    on conflict (slug) do update set
+      source_project_id = excluded.source_project_id,
+      client_name = excluded.client_name,
+      status = excluded.status,
+      password_hash = coalesce(demo_clients.password_hash, excluded.password_hash),
+      local_path = excluded.local_path,
+      repository_url = excluded.repository_url,
+      branch = excluded.branch,
+      latest_commit = excluded.latest_commit,
+      deployment_url = excluded.deployment_url,
+      public_demo_url = excluded.public_demo_url,
+      expires_at = coalesce(demo_clients.expires_at, excluded.expires_at),
+      linked_from_forge_at = excluded.linked_from_forge_at,
+      updated_at = now()
+  `;
+
+  await sql`
+    insert into demo_sites (
+      client_slug,
+      site_id,
+      title,
+      description,
+      url,
+      phase,
+      status,
+      progress,
+      last_updated,
+      sort_order,
+      updated_at
+    )
+    values (
+      ${record.slug},
+      ${site.id},
+      ${site.title},
+      ${site.description},
+      ${site.url},
+      ${site.phase},
+      ${site.status},
+      ${site.progress},
+      ${site.lastUpdated},
+      0,
+      now()
+    )
+    on conflict (client_slug, site_id) do update set
+      title = excluded.title,
+      description = excluded.description,
+      url = excluded.url,
+      phase = excluded.phase,
+      status = excluded.status,
+      progress = excluded.progress,
+      last_updated = excluded.last_updated,
+      updated_at = now()
+  `;
+
+  await sql`
+    insert into demo_updates (
+      client_slug,
+      update_id,
+      title,
+      summary,
+      status,
+      update_date,
+      updated_at
+    )
+    values (
+      ${record.slug},
+      ${update.id},
+      ${update.title},
+      ${update.summary},
+      ${update.status},
+      ${update.date},
+      now()
+    )
+    on conflict (client_slug, update_id) do update set
+      title = excluded.title,
+      summary = excluded.summary,
+      status = excluded.status,
+      update_date = excluded.update_date,
+      updated_at = now()
+  `;
+
+  await appendActivity(
+    project.id,
+    "demo-portal-link",
+    `${created ? "Created" : "Updated"} Neon-backed RidgePath demo portal link`,
+    {
+      storage: "neon",
+      clientSlug: record.slug,
+      publicDemoUrl: record.publicDemoUrl,
+      passwordGenerated: Boolean(generatedPassword),
+    },
+  );
+
+  return {
+    ok: true,
+    storage: "neon",
+    created,
+    passwordGenerated: Boolean(generatedPassword),
+    generatedPassword,
+    registryPath: "Neon database",
+    clientSlug: record.slug,
+    clientName: record.clientName,
+    publicDemoUrl: record.publicDemoUrl,
+    siteUrl: record.deploymentUrl,
+    expiresAt: record.expiresAt,
+  };
+}
+
+async function linkProjectToDemoPortal(project) {
+  const settings = await launcherSettings();
+  const demoPortal = demoPortalIntegrationSettings(settings);
+  const sql = demoPortalDb();
+  const registryPath = path.join(demoPortal.root, normalizeRelativePath(demoPortal.clientsFile));
+  if (!(await pathExists(demoPortal.root))) {
+    throw new Error(`Demo portal project root does not exist: ${demoPortal.root}`);
+  }
+
+  const now = new Date();
+  const timestamp = now.toISOString();
+  const slugValue = project.id;
+  const clients = sql ? [] : await readJson(registryPath, []);
+  if (!sql && !Array.isArray(clients)) {
+    throw new Error(`Demo portal registry must contain a JSON array: ${registryPath}`);
+  }
+  const existingIndex = sql ? -1 : clients.findIndex((client) => client?.slug === slugValue || client?.sourceProjectId === project.id);
+  const existing = sql ? await existingDemoClientFromDb(sql, project.id, slugValue) : existingIndex >= 0 ? clients[existingIndex] : null;
+  const existingPasswordHash = existing?.passwordHash || existing?.password_hash || "";
+  const generatedPassword = existingPasswordHash ? "" : generateDemoPassword(demoPortal.passwordLength);
+  const passwordHash = existingPasswordHash || hashDemoPassword(generatedPassword);
+  const siteUrl = projectDemoSiteUrl(project);
+  const dashboard = project.projectManagement?.dashboard || {};
+  const summary = dashboard.summary || {};
+  const expiry = existing?.expiresAt || existing?.expires_at || new Date(now.getTime() + (Number(demoPortal.defaultExpiryDays || 45) * 24 * 60 * 60 * 1000)).toISOString();
+  const site = {
+    id: project.id,
+    title: displayProjectTitle(project),
+    description: sentence(project.description, "Current website demo linked from RidgePath Forge."),
+    url: siteUrl,
+    phase: sentence(summary.currentPhase, "Needs review"),
+    status: project.status === "running" ? "Active local demo" : "Linked",
+    progress: demoProgressFromDashboard(project),
+    lastUpdated: timestamp.slice(0, 10),
+  };
+  const update = demoUpdateForProject(project, timestamp);
+  const record = {
+    ...existing,
+    existingClient: existing,
+    slug: existing?.slug || slugValue,
+    sourceProjectId: project.id,
+    clientName: existing?.clientName || existing?.client_name || displayProjectTitle(project),
+    status: existing?.status || "active",
+    passwordHash,
+    localPath: project.path,
+    repositoryUrl: projectRepositoryUrl(project),
+    branch: project.git?.branch || existing?.branch || "",
+    latestCommit: await runCapture("git.exe", ["rev-parse", "--short", "HEAD"], project.path),
+    deploymentUrl: siteUrl,
+    publicDemoUrl: demoPortalPublicUrl(demoPortal, slugValue),
+    expiresAt: expiry,
+    sites: mergeDemoSite(existing?.sites, site),
+    updates: mergeDemoUpdate(existing?.updates, update),
+    linkedFromForgeAt: timestamp,
+  };
+
+  if (sql) {
+    return upsertDemoPortalDatabaseRecord(project, demoPortal, record, site, update, generatedPassword);
+  }
+
+  if (existingIndex >= 0) clients[existingIndex] = record;
+  else clients.push(record);
+
+  await writeJson(registryPath, clients);
+  await appendActivity(
+    project.id,
+    "demo-portal-link",
+    `${existing ? "Updated" : "Created"} RidgePath demo portal link`,
+    {
+      demoPortalRoot: demoPortal.root,
+      registryFile: demoPortal.clientsFile,
+      clientSlug: record.slug,
+      publicDemoUrl: record.publicDemoUrl,
+      passwordGenerated: Boolean(generatedPassword),
+    },
+  );
+
+  return {
+    ok: true,
+    storage: "local-json",
+    created: !existing,
+    passwordGenerated: Boolean(generatedPassword),
+    generatedPassword,
+    registryPath,
+    clientSlug: record.slug,
+    clientName: record.clientName,
+    publicDemoUrl: record.publicDemoUrl,
+    siteUrl,
+    expiresAt: record.expiresAt,
+  };
+}
+
 function runCapture(command, args, cwd) {
   return new Promise((resolve) => {
     const child = spawn(command, args, { cwd, windowsHide: true });
@@ -950,10 +1881,9 @@ function isRunning(child) {
   return Boolean(child && child.exitCode === null && !child.killed);
 }
 
-async function checkPort(port) {
-  if (!port) return "unknown";
+function checkPortHost(port, host) {
   return new Promise((resolve) => {
-    const socket = net.createConnection({ host: "127.0.0.1", port, timeout: 450 });
+    const socket = net.createConnection({ host, port, timeout: 450 });
     socket.on("connect", () => {
       socket.destroy();
       resolve("open");
@@ -964,6 +1894,16 @@ async function checkPort(port) {
     });
     socket.on("error", () => resolve("closed"));
   });
+}
+
+async function checkPort(port) {
+  if (!port) return "unknown";
+  const checks = await Promise.all([
+    checkPortHost(port, "127.0.0.1"),
+    checkPortHost(port, "::1"),
+    checkPortHost(port, "localhost"),
+  ]);
+  return checks.includes("open") ? "open" : "closed";
 }
 
 async function hydrateStatus(project) {
@@ -1348,6 +2288,56 @@ async function createProjectSourceStructure(projectPath, settings, values) {
   await writeRenderedTemplate(settings, "projectSourceReadme", path.join(projectPath, "project-source", "README.md"), values);
 }
 
+function registeredProjectServerSource(projectName, assignedPort) {
+  return `import http from "node:http";
+
+const port = Number(process.env.PORT || ${assignedPort});
+const name = ${JSON.stringify(projectName)};
+const brand = {
+  background: "#f6f8f4",
+  surface: "#ffffff",
+  text: "#173323",
+  muted: "#5d6f64",
+  accent: "#6f9938",
+  accentDark: "#3d6425",
+};
+
+function page(title, eyebrow, message) {
+  return \`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>\${title}</title>
+  </head>
+  <body style="margin:0;font-family:Segoe UI,Arial,sans-serif;background:\${brand.background};color:\${brand.text}">
+    <main style="min-height:100vh;display:grid;place-items:center;padding:32px">
+      <section style="width:min(720px,100%);background:\${brand.surface};border:1px solid rgba(23,51,35,.14);border-radius:8px;padding:36px;box-shadow:0 20px 48px rgba(23,51,35,.12)">
+        <p style="margin:0 0 12px;color:\${brand.accentDark};font-weight:800;text-transform:uppercase">\${eyebrow}</p>
+        <h1 style="margin:0 0 16px;font-size:clamp(2rem,4vw,3.5rem);line-height:1.05">\${title}</h1>
+        <p style="margin:0 0 28px;color:\${brand.muted};font-size:1.08rem;line-height:1.6">\${message}</p>
+        <a href="/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 18px;border-radius:6px;background:\${brand.accent};color:white;text-decoration:none;font-weight:800">Return home</a>
+      </section>
+    </main>
+  </body>
+</html>\`;
+}
+
+http.createServer((req, res) => {
+  const url = new URL(req.url || "/", "http://localhost");
+  const isHome = url.pathname === "/";
+  const html = isHome
+    ? page(name, "Registered by RidgePath Forge", "This starter site is ready for project-specific content, routes, validation, and deployment setup.")
+    : page("Page not found", name, "This route is not available yet. The custom 404 should be kept visually aligned with the finished site theme.");
+
+  res.writeHead(isHome ? 200 : 404, { "Content-Type": "text/html; charset=utf-8" });
+  res.end(html);
+}).listen(port, "127.0.0.1", () => {
+  console.log(\`\${name} listening on http://localhost:\${port}\`);
+});
+`;
+}
+
 async function createRegisteredProject({
   name,
   audience = "personal",
@@ -1418,8 +2408,8 @@ async function createRegisteredProject({
       start: `set PORT=${assignedPort}&& node server.js`,
     },
   }, null, 2)}\n`);
-  await fs.writeFile(path.join(projectPath, "server.js"), `import http from "node:http";\n\nconst port = Number(process.env.PORT || ${assignedPort});\nconst name = ${JSON.stringify(projectName)};\n\nhttp.createServer((_req, res) => {\n  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });\n  res.end(\`<!doctype html><html><head><title>\${name}</title></head><body style="font-family:Segoe UI,sans-serif;padding:32px"><h1>\${name}</h1><p>Registered by RidgePath Forge.</p></body></html>\`);\n}).listen(port, "127.0.0.1", () => {\n  console.log(\`\${name} listening on http://localhost:\${port}\`);\n});\n`);
-  await fs.writeFile(path.join(projectPath, "README.md"), `# ${projectName}\n\nRegistered by RidgePath Forge on port ${assignedPort}.\n\n## Bootstrap Snapshot\n\n- Application Classification: ${bootstrap.applicationClassification}\n- Technology Stack: ${bootstrap.technologyStack}\n- Repository: ${bootstrap.repositoryOwner}/${folderName} (${bootstrap.repositoryVisibility})\n- Hosting: ${hostingLabel}\n- Package Manager: ${bootstrap.packageManager}\n\nThis project is registered only. Start it from RidgePath Forge when you are ready.\n`);
+  await fs.writeFile(path.join(projectPath, "server.js"), registeredProjectServerSource(projectName, assignedPort));
+  await fs.writeFile(path.join(projectPath, "README.md"), `# ${projectName}\n\nRegistered by RidgePath Forge on port ${assignedPort}.\n\n## Bootstrap Snapshot\n\n- Application Classification: ${bootstrap.applicationClassification}\n- Technology Stack: ${bootstrap.technologyStack}\n- Repository: ${bootstrap.repositoryOwner}/${folderName} (${bootstrap.repositoryVisibility})\n- Hosting: ${hostingLabel}\n- Package Manager: ${bootstrap.packageManager}\n\n## Website Baseline\n\n- Starter runtime includes a custom 404 response that shares the same visual theme as the home page.\n- For website projects, keep the custom 404 aligned with the final site theme and include it in review evidence before release.\n\nThis project is registered only. Start it from RidgePath Forge when you are ready.\n`);
   await writeRenderedTemplate(settings, "bootstrapConfig", path.join(projectPath, "bootstrap-config.md"), templateValues);
   await writeRenderedTemplate(settings, "projectInitiation", path.join(projectPath, "project-initiation.md"), templateValues);
   await writeRenderedTemplate(settings, "launcherHandoff", path.join(projectPath, "docs", "launcher-handoff.md"), templateValues);
@@ -1577,6 +2567,26 @@ app.post("/api/projects/:projectId/initialize-project-management", async (req, r
     const project = await findProject(req.params.projectId);
     if (!project) return res.status(404).json({ error: "Project not found." });
     res.json(await initializeProjectManagement(project));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/projects/:projectId/create-portfolio-draft", async (req, res) => {
+  try {
+    const project = await findProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: "Project not found." });
+    res.json(await createPortfolioDraft(project));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/projects/:projectId/link-demo-portal", async (req, res) => {
+  try {
+    const project = await findProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: "Project not found." });
+    res.json(await linkProjectToDemoPortal(project));
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

@@ -2,7 +2,7 @@
 
 ## Scope
 
-Discovery reviewed the current Local Project Launcher codebase for the Project Management MVP data foundation. Reference architecture and data-contract documents were found in `C:\Development\Shared\codex-operations-library\docs` because this repository did not yet contain a `docs` directory.
+Discovery reviewed the current RidgePath Forge codebase for the Project Management MVP data foundation. Reference architecture and data-contract documents were found in `C:\Development\Shared\codex-operations-library\docs` because this repository did not yet contain a `docs` directory.
 
 ## Existing Project Detail Views
 

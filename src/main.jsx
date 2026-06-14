@@ -4,6 +4,7 @@ import {
   Activity,
   AlertTriangle,
   BadgeCheck,
+  BookOpen,
   Check,
   Code2,
   ClipboardList,
@@ -43,6 +44,7 @@ function App() {
   const [showOperationsLibrary, setShowOperationsLibrary] = useState(false);
   const [operationsLibrary, setOperationsLibrary] = useState(null);
   const [actionError, setActionError] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
 
   async function loadProjects() {
     const response = await fetch("/api/projects");
@@ -69,15 +71,19 @@ function App() {
   async function runAction(projectId, action) {
     setBusy(`${projectId}:${action}`);
     setActionError("");
+    setActionNotice("");
     try {
       const response = await fetch(`/api/projects/${projectId}/${action}`, { method: "POST" });
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || "Action failed.");
       }
+      const result = await response.json();
       await loadProjects();
+      return result;
     } catch (error) {
       setActionError(error.message || "Action failed.");
+      return null;
     } finally {
       setBusy("");
     }
@@ -112,6 +118,36 @@ function App() {
 
   async function initializeProjectManagement(projectId) {
     await runAction(projectId, "initialize-project-management");
+  }
+
+  async function createPortfolioDraft(projectId) {
+    const result = await runAction(projectId, "create-portfolio-draft");
+    if (!result) return;
+    const projectLabel = result.createdProjectIdea ? "Created" : "Updated";
+    const blogLabel = result.createdBlogPost ? "created" : "updated";
+    const screenshotLabel = result.screenshotStatus === "captured"
+      ? ` Captured ${result.screenshotCount} screenshot${result.screenshotCount === 1 ? "" : "s"}.`
+      : result.screenshotStatus
+        ? ` Screenshot capture ${result.screenshotStatus}.`
+        : "";
+    const aiLabel = result.aiStatus === "generated"
+      ? " OpenAI draft copy generated."
+      : result.aiStatus
+        ? ` OpenAI ${result.aiStatus}.`
+        : "";
+    setActionNotice(`${projectLabel} portfolio draft and ${blogLabel} blog draft in trevis-portfolio.${screenshotLabel}${aiLabel}`);
+  }
+
+  async function linkDemoPortal(projectId) {
+    const result = await runAction(projectId, "link-demo-portal");
+    if (!result) return;
+    const actionLabel = result.created ? "Created" : "Updated";
+    const passwordLabel = result.passwordGenerated
+      ? ` Password: ${result.generatedPassword}`
+      : " Existing password preserved.";
+    const siteLabel = result.siteUrl ? ` Site: ${result.siteUrl}` : " Deployment URL still needs review.";
+    const storageLabel = result.storage === "neon" ? " Stored in Neon." : " Stored in local fallback JSON.";
+    setActionNotice(`${actionLabel} demo portal access for ${result.clientName} at ${result.publicDemoUrl}.${storageLabel}${passwordLabel}${siteLabel}`);
   }
 
   async function registerProject(values) {
@@ -200,6 +236,15 @@ function App() {
           </button>
         </div>
       ) : null}
+      {actionNotice ? (
+        <div className="action-notice" role="status">
+          <Check size={16} />
+          <span>{actionNotice}</span>
+          <button type="button" onClick={() => setActionNotice("")} aria-label="Dismiss action notice">
+            <X size={14} />
+          </button>
+        </div>
+      ) : null}
 
       {selected ? (
         <ProjectDetail
@@ -212,6 +257,8 @@ function App() {
           onTakeOver={() => runAction(selected.id, "take-over")}
           onGitSync={() => runAction(selected.id, "git-sync")}
           onInitializeProjectManagement={() => initializeProjectManagement(selected.id)}
+          onCreatePortfolioDraft={() => createPortfolioDraft(selected.id)}
+          onLinkDemoPortal={() => linkDemoPortal(selected.id)}
           onSaveDescription={(description) => saveDescription(selected.id, description)}
           onOpenFolder={() => openFolder(selected.id)}
           onOpenProjectManagementFolder={(fileKey) => openProjectManagementFolder(selected.id, fileKey)}
@@ -397,7 +444,7 @@ function ProjectTableActions({ project, runtime, onStartProject, onStopProject, 
   );
 }
 
-function ProjectDetail({ project, busy, onBack, onStart, onStop, onRestart, onTakeOver, onGitSync, onInitializeProjectManagement, onSaveDescription, onOpenFolder, onOpenProjectManagementFolder }) {
+function ProjectDetail({ project, busy, onBack, onStart, onStop, onRestart, onTakeOver, onGitSync, onInitializeProjectManagement, onCreatePortfolioDraft, onLinkDemoPortal, onSaveDescription, onOpenFolder, onOpenProjectManagementFolder }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(project.description);
   const [activeMenu, setActiveMenu] = useState("overview");
@@ -504,7 +551,11 @@ function ProjectDetail({ project, busy, onBack, onStart, onStop, onRestart, onTa
               onSaveDescription={onSaveDescription}
               onOpenFolder={onOpenFolder}
               onGitSync={onGitSync}
+              onCreatePortfolioDraft={onCreatePortfolioDraft}
+              onLinkDemoPortal={onLinkDemoPortal}
               isBusy={isBusy}
+              isCreatingPortfolioDraft={busy === `${project.id}:create-portfolio-draft`}
+              isLinkingDemoPortal={busy === `${project.id}:link-demo-portal`}
             />
           ) : null}
           {activeMenu === "management" ? (
@@ -525,7 +576,7 @@ function ProjectDetail({ project, busy, onBack, onStart, onStop, onRestart, onTa
   );
 }
 
-function ProjectOverview({ project, editing, draft, onDraftChange, onEdit, onCancelEdit, onSaveDescription, onOpenFolder, onGitSync, isBusy }) {
+function ProjectOverview({ project, editing, draft, onDraftChange, onEdit, onCancelEdit, onSaveDescription, onOpenFolder, onGitSync, onCreatePortfolioDraft, onLinkDemoPortal, isBusy, isCreatingPortfolioDraft, isLinkingDemoPortal }) {
   const primaryServices = project.services.filter((service) => service.kind === "primary");
   const apiServices = project.services.filter((service) => service.kind === "api");
   const liveUrl = project.liveUrl || project.externalUrl || project.homepage || "";
@@ -609,6 +660,39 @@ function ProjectOverview({ project, editing, draft, onDraftChange, onEdit, onCan
               </a>
             </div>
           ) : null}
+        </div>
+      </div>
+
+      <div className="resource-section">
+        <div className="section-title compact">
+          <BookOpen size={17} />
+          <h3>Publishing Integrations</h3>
+        </div>
+        <div className="resource-stack">
+          <div className="resource-row">
+            <div className="resource-meta">
+              <Rocket size={16} />
+              <span>
+                <strong>RidgePath Demo Portal</strong>
+                <small>Link this project into the client demo portal with local path, repo, status, deployment metadata, and a generated client password.</small>
+              </span>
+            </div>
+            <button className="secondary-action primary-secondary" disabled={isBusy || isLinkingDemoPortal} onClick={onLinkDemoPortal}>
+              {isLinkingDemoPortal ? "Linking..." : "Add to Demo Portal"}
+            </button>
+          </div>
+          <div className="resource-row">
+            <div className="resource-meta">
+              <BookOpen size={16} />
+              <span>
+                <strong>Trevis Portfolio Draft</strong>
+                <small>Create or update a local project idea and blog draft. Drafts are hidden from production until reviewed.</small>
+              </span>
+            </div>
+            <button className="secondary-action primary-secondary" disabled={isBusy || isCreatingPortfolioDraft} onClick={onCreatePortfolioDraft}>
+              {isCreatingPortfolioDraft ? "Creating..." : "Add to Portfolio"}
+            </button>
+          </div>
         </div>
       </div>
 
