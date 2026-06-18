@@ -66,6 +66,34 @@
   gap: 10px;
 }
 
+.execution-packet-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.runtime-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-text-secondary);
+}
+
+.runtime-section-heading span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.runtime-section-heading strong {
+  color: var(--color-brand-navy);
+}
+
+.runtime-section-heading em {
+  font-size: 0.82rem;
+  font-style: normal;
+}
+
 .command-request-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -75,6 +103,11 @@
   border: 1px solid var(--color-border-tertiary);
   border-radius: 8px;
   background: var(--color-background-primary);
+}
+
+.execution-packet-card {
+  border-color: var(--color-border-secondary);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbfa 100%);
 }
 
 .command-request-title {

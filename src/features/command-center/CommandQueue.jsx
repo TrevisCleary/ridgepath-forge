@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Check, Clock, PlayCircle, ShieldCheck, X } from "lucide-react";
+import { Check, ClipboardCheck, Clock, PlayCircle, ShieldCheck, X } from "lucide-react";
 import "./CommandQueue.css";
 
 const COMMAND_TYPES = [
@@ -24,6 +24,8 @@ const COMMAND_TYPES = [
 export function CommandQueue({
   commands,
   events = [],
+  executionPackets = [],
+  executionPacketEvents = [],
   runners,
   projects,
   busy,
@@ -31,6 +33,7 @@ export function CommandQueue({
   onUpdateCommand,
 }) {
   const activeRunners = useMemo(() => runners.filter((runner) => runner.paired), [runners]);
+  const [copiedPacketId, setCopiedPacketId] = useState("");
   const eventsByCommand = useMemo(() => {
     const map = new Map();
     for (const event of events) {
@@ -40,6 +43,16 @@ export function CommandQueue({
     }
     return map;
   }, [events]);
+  const eventsByPacket = useMemo(() => {
+    const map = new Map();
+    for (const event of executionPacketEvents) {
+      const current = map.get(event.packetId) || [];
+      current.push(event);
+      map.set(event.packetId, current);
+    }
+    return map;
+  }, [executionPacketEvents]);
+  const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const [draft, setDraft] = useState({
     runnerId: activeRunners[0]?.id || runners[0]?.id || "",
     commandType: "project-review",
@@ -49,6 +62,7 @@ export function CommandQueue({
   });
 
   const visibleCommands = commands.slice(0, 25);
+  const visiblePackets = executionPackets.slice(0, 12);
   const canSubmit = draft.commandType && draft.reason.trim();
 
   const createCommand = (event) => {
@@ -63,6 +77,11 @@ export function CommandQueue({
       if (!command) return;
       setDraft((current) => ({ ...current, target: "", reason: "" }));
     });
+  };
+  const copyPacketPrompt = async (packet) => {
+    await navigator.clipboard.writeText(buildExecutionPrompt(packet, projectById.get(packet.projectId)));
+    setCopiedPacketId(packet.id);
+    window.setTimeout(() => setCopiedPacketId((current) => current === packet.id ? "" : current), 1800);
   };
 
   return (
@@ -115,6 +134,70 @@ export function CommandQueue({
           {busy === "command-create" ? "Queueing..." : "Queue Request"}
         </button>
       </form>
+
+      <section className="execution-packet-panel" aria-labelledby="execution-packet-title">
+        <div className="runtime-section-heading">
+          <span>
+            <ClipboardCheck size={17} />
+            <strong id="execution-packet-title">Execution Packets</strong>
+          </span>
+          <em>{visiblePackets.length} visible</em>
+        </div>
+        <div className="command-queue-list">
+          {visiblePackets.length ? visiblePackets.map((packet) => {
+            const packetEvents = eventsByPacket.get(packet.id) || [];
+            const project = projectById.get(packet.projectId);
+            return (
+              <article className="command-request-card execution-packet-card" key={packet.id}>
+                <div>
+                  <div className="command-request-title">
+                    <ClipboardCheck size={16} />
+                    <strong>{packet.objective || "Approved execution packet"}</strong>
+                    <span>{project?.name || packet.projectId || "Unassigned project"}</span>
+                  </div>
+                  <div className="command-request-meta">
+                    <span className={`status-pill ${packet.status}`}>{formatStatus(packet.status)}</span>
+                    <span>{formatStatus(packet.branchPolicy)}</span>
+                    {packet.branchName ? <span>{packet.branchName}</span> : null}
+                    {packet.claimedByRunnerId ? <span>Claimed by {packet.claimedByRunnerId}</span> : null}
+                    <span>{formatTime(packet.updatedAt || packet.createdAt)}</span>
+                  </div>
+                  {packet.validationResult ? (
+                    <div className="command-request-result">
+                      <strong>Validation</strong>
+                      <code>{packet.validationResult}</code>
+                    </div>
+                  ) : null}
+                  {packet.error ? (
+                    <div className="command-request-error">
+                      <strong>Error</strong>
+                      <span>{packet.error}</span>
+                    </div>
+                  ) : null}
+                  {packetEvents.length ? (
+                    <div className="command-event-list">
+                      <strong>Audit</strong>
+                      {packetEvents.slice(0, 4).map((event) => (
+                        <span key={event.id}>
+                          {formatStatus(event.eventType)} by {event.actor || "system"} · {formatTime(event.createdAt)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="command-request-actions">
+                  <button type="button" className="secondary-action" onClick={() => copyPacketPrompt(packet)}>
+                    <ClipboardCheck size={15} />
+                    {copiedPacketId === packet.id ? "Copied Prompt" : "Copy Prompt"}
+                  </button>
+                </div>
+              </article>
+            );
+          }) : (
+            <div className="empty compact-empty">No approved execution packets yet. Approve a proposal to create one.</div>
+          )}
+        </div>
+      </section>
 
       <div className="command-queue-list">
         {visibleCommands.length ? visibleCommands.map((command) => {
@@ -184,6 +267,34 @@ export function CommandQueue({
       </div>
     </section>
   );
+}
+
+function buildExecutionPrompt(packet, project) {
+  const constraints = packet.constraints?.length
+    ? packet.constraints.map((item) => `- ${item}`).join("\n")
+    : "- No additional constraints were captured.";
+  return [
+    "You are Codex acting on an owner-approved RidgePath Forge execution packet.",
+    "",
+    `Packet ID: ${packet.id}`,
+    `Proposal ID: ${packet.proposalId}`,
+    `Project: ${project?.name || packet.projectId || "Unassigned project"}`,
+    project?.path ? `Local path: ${project.path}` : "Local path: not available from the hosted catalog",
+    `Branch policy: ${packet.branchPolicy || "feature-branch"}`,
+    packet.branchName ? `Requested branch name: ${packet.branchName}` : "Requested branch name: create one that matches the objective",
+    "",
+    "Objective:",
+    packet.objective || "No objective recorded.",
+    "",
+    "Constraints and owner direction:",
+    constraints,
+    "",
+    "Execution rules:",
+    "- Inspect the repository and current branch before editing.",
+    "- Keep edits tightly scoped to the packet objective.",
+    "- Run relevant validation before marking the packet complete.",
+    "- Update the execution packet status and validation result in Forge/Neon when finished.",
+  ].join("\n");
 }
 
 function labelForCommand(value) {

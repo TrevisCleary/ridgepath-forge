@@ -472,13 +472,14 @@ function App() {
   const localRunnerPaired = Boolean(commandCenterStatus?.localRunnerPaired || activeLocalRunners.length);
   const localControlsEnabled = commandCenterLoaded && (!hostedMode || localRunnerPaired);
   const openCommandCount = commandRequests.filter((command) => ["pending", "approved"].includes(command.approvalStatus) && !["succeeded", "failed", "cancelled"].includes(command.executionStatus)).length;
+  const openExecutionPacketCount = executionPackets.filter((packet) => !["complete", "failed", "cancelled"].includes(packet.status)).length;
   const activeMachine = ridgeFabric?.editSession?.currentHost || ridgeFabric?.editSession?.active?.host || "Local";
   const navigationItems = [
     { key: "overview", label: "Overview", icon: <Home size={18} /> },
     { key: "projects", label: "Projects", icon: <Code2 size={18} />, badge: projects.length },
     { key: "approval", label: "Approval Queue", icon: <ClipboardList size={18} />, badge: proposals.filter((proposal) => ["proposed", "needs-evidence", "deferred"].includes(proposal.status)).length },
     { key: "agent-runs", label: "Agent Runs", icon: <Activity size={18} />, badge: agentRuns.length },
-    { key: "runtime", label: "Runtime", icon: <Gauge size={18} />, badge: openCommandCount || runningCount },
+    { key: "runtime", label: "Runtime", icon: <Gauge size={18} />, badge: openCommandCount + openExecutionPacketCount || runningCount },
     { key: "fabric", label: "Fabric", icon: <Network size={18} />, badge: ridgeFabric?.counts?.devices || "" },
     { key: "automation", label: "Automation", icon: <Workflow size={18} /> },
     { key: "publishing", label: "Publishing", icon: <Globe2 size={18} /> },
@@ -655,6 +656,8 @@ function App() {
         <CommandQueue
           commands={commandRequests}
           events={commandEvents}
+          executionPackets={executionPackets}
+          executionPacketEvents={executionPacketEvents}
           runners={localRunners}
           projects={projects}
           busy={busy}

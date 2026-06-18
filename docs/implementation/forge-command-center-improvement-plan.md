@@ -535,3 +535,13 @@ This gives an immediate command-center feel without destabilizing start/stop/run
 - Browser-verified local Projects view on `http://127.0.0.1:3060`: 16 rows render, an impossible search shows `0 shown` with `16 synced`, and `Reset Filters` restores all rows.
 - Observed one transient local Vite proxy 502 while the API watchdog restarted the API under a new process; direct `/api/health` and `/api/projects` returned HTTP 200 after restart.
 - Remaining next step: run the same Projects check on protected `ops.ridgepath.io` from an authenticated browser session.
+
+### Runtime Execution Packet Visibility Pass
+
+- Added Execution Packets as a first-class panel inside Runtime.
+- Runtime now shows packet count, project association, status, branch policy, runner claim state, validation result, error output, and packet audit events.
+- Added a `Copy Prompt` action for execution packets so a Codex/Waypoint handoff can be generated from Runtime, not only from Approval Queue.
+- Adjusted the Runtime navigation badge so open execution packets count as active runtime work alongside command requests.
+- Verified `npm.cmd run build`.
+- Browser-verified local Runtime on `http://127.0.0.1:3060`: Runtime renders the local command form, paired runner summary, empty execution-packet panel, and existing completed command audit trail.
+- Remaining next step: create or approve a non-mutating sample proposal packet to verify the full packet display and copy prompt with a live packet record.
