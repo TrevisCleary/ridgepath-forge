@@ -27,6 +27,7 @@ import { PortTreeModal } from "./features/projects/PortTreeModal.jsx";
 import { ProjectTable } from "./features/projects/ProjectTable.jsx";
 import { RegisterProjectModal } from "./features/project-registration/RegisterProjectModal.jsx";
 import { RidgeFabricWorkspace } from "./features/ridge-fabric/RidgeFabricWorkspace.jsx";
+import { SettingsWorkspace } from "./features/settings/SettingsWorkspace.jsx";
 import { apiJson } from "./lib/api.js";
 import "./styles.css";
 
@@ -505,6 +506,24 @@ function App() {
     return command;
   }
 
+  async function refreshSettingsState() {
+    setBusy("settings-refresh");
+    setActionError("");
+    try {
+      await Promise.all([
+        loadProjects(),
+        loadCommandCenterState(),
+        loadRidgeFabricRegistry(),
+        loadOperationsLibraryStatus(),
+      ]);
+      setActionNotice("Refreshed Forge control-plane state.");
+    } catch (error) {
+      setActionError(error.message || "Could not refresh settings state.");
+    } finally {
+      setBusy((current) => current === "settings-refresh" || current === "operations-refresh" ? "" : current);
+    }
+  }
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return projects.filter((project) => {
@@ -762,16 +781,19 @@ function App() {
           onSyncOperations={queueOperationsLibrarySync}
         />
       ) : activeView === "settings" ? (
-        <CommandPlaceholder
-          title="Settings"
-          icon={<Settings size={20} />}
-          detail="Project roots, registry roots, local agent pairing, hosted mode, and startup health settings will be managed here."
-          rows={[
-            ["Project root", root || "Not loaded"],
-            ["Registry root", "C:\\Development\\Shared\\ridge-fabric-registry"],
-            ["Mode", hostedMode ? "Hosted Ops" : "Local command center"],
-            ["Local runner", localRunnerPaired ? "Paired" : "Not paired"],
-          ]}
+        <SettingsWorkspace
+          root={root}
+          ridgeFabric={ridgeFabric}
+          operationsLibrary={operationsLibrary}
+          commandCenterStatus={commandCenterStatus}
+          runners={localRunners}
+          projects={projects}
+          commands={commandRequests}
+          executionPackets={executionPackets}
+          hostedMode={hostedMode}
+          localRunnerPaired={localRunnerPaired}
+          busy={busy}
+          onRefresh={refreshSettingsState}
         />
       ) : null}
       </div>

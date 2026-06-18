@@ -736,6 +736,153 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+.settings-workspace {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px;
+  overflow: auto;
+}
+
+.settings-hero p:not(.eyebrow) {
+  max-width: 760px;
+}
+
+.settings-metric.success svg,
+.settings-guardrail.good svg {
+  color: var(--color-text-success);
+}
+
+.settings-metric.warning svg,
+.settings-guardrail.attention svg {
+  color: var(--color-text-warning);
+}
+
+.settings-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-panel {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+  overflow: auto;
+}
+
+.settings-panel.wide {
+  grid-column: 1 / -1;
+}
+
+.settings-rows,
+.runner-settings-list,
+.settings-guardrail-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.runner-settings-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(260px, 1fr);
+  gap: 10px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: var(--color-background-secondary);
+  padding: 10px;
+}
+
+.runner-settings-card.paired {
+  border-color: var(--color-border-success);
+  background: var(--color-background-success);
+}
+
+.runner-settings-card.stale {
+  border-color: var(--color-border-warning);
+}
+
+.runner-settings-card strong,
+.runner-settings-card span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runner-settings-card span,
+.runner-settings-meta span {
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.runner-settings-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.runner-capabilities {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.runner-capabilities em {
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--color-text-secondary);
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.settings-guardrail-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.settings-guardrail {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: var(--color-background-secondary);
+  padding: 9px;
+}
+
+.settings-guardrail.attention {
+  border-color: var(--color-border-warning);
+  background: var(--color-background-warning);
+}
+
+.settings-guardrail strong,
+.settings-guardrail em {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-guardrail em {
+  color: var(--color-text-secondary);
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 750;
+}
+
 .approval-workspace,
 .agent-runs-workspace {
   min-height: 0;
@@ -3189,7 +3336,10 @@ h3 {
   .overview-grid,
   .overview-metrics,
   .operations-grid,
-  .operations-asset-grid {
+  .operations-asset-grid,
+  .settings-grid,
+  .settings-guardrail-grid,
+  .runner-settings-card {
     grid-template-columns: 1fr;
   }
 

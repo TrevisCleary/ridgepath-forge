@@ -626,3 +626,13 @@ This gives an immediate command-center feel without destabilizing start/stop/run
 - Kept local refresh separate from hosted runner sync so local mode can reload the API snapshot without entering the command queue.
 - Added responsive layout rules so the workspace collapses cleanly on smaller screens.
 - Remaining next step: build and browser-verify the Operations Library workspace locally, then deploy the updated production site.
+
+### Settings Control Plane Workspace Pass
+
+- Replaced the Settings placeholder with a full-page control-plane workspace.
+- Added visible hosted/local mode, storage backend, runner pairing, queue, project catalog, Fabric, and execution packet state.
+- Added root/path visibility for the project catalog, Ridge Fabric registry, and Operations Library contract.
+- Added local runner cards with runner id, host/user, working directory, last seen timestamp, status, and advertised capabilities.
+- Added operational guardrails for local actions, machine controls, command approval, execution packets, Operations Library health, and Fabric registry writability.
+- Added a Settings `Refresh State` action that reloads project catalog, command-center status, Fabric registry, and Operations Library status together.
+- Remaining next step: build, browser-verify the Settings workspace locally, then deploy the updated production site.
