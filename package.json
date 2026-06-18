@@ -8,6 +8,8 @@
     "server": "node server/index.js",
     "redirect": "node server/redirect.js",
     "client": "vite --host 127.0.0.1 --port 3060",
+    "runner:heartbeat": "node scripts/local-runner-heartbeat.mjs",
+    "runner:start": "node scripts/local-runner-heartbeat.mjs --watch",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 3060"
   },

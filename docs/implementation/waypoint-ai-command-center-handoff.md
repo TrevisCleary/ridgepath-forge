@@ -178,6 +178,31 @@ Durable follow-up:
 - Replace Basic Auth with Microsoft/Entra authentication tied to the RidgePath operator account.
 - Keep local machine actions behind a paired local runner, not direct hosted execution.
 
+## Local Runner Foundation
+
+Initial local-runner pairing is heartbeat-only. It does not execute remote commands.
+
+Current runner behavior:
+
+- `npm.cmd run runner:heartbeat` writes a single local-runner heartbeat to Neon.
+- `npm.cmd run runner:start` runs the heartbeat loop every 60 seconds.
+- The runner loads `.env.local` or `.env` and uses `COMMAND_CENTER_DATABASE_URL`.
+- Runner identity defaults to the Windows hostname and can be overridden with:
+  - `RIDGEPATH_RUNNER_ID`
+  - `RIDGEPATH_RUNNER_NAME`
+- Hosted Ops reads `/api/runners` and `/api/command-center/status`.
+- A runner is considered paired while it is online and not stale.
+
+Current capabilities reported by the heartbeat:
+
+- `heartbeat`
+- `project-inventory`
+- `fabric-inventory`
+- `project-review`
+- `local-actions-require-approval`
+
+Do not add command execution until the command table, approval policy, idempotency rules, and result/audit model are implemented.
+
 ## Waypoint Agent Loop Guardrails
 
 Default allowed:

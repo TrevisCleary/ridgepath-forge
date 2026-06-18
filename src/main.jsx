@@ -49,6 +49,7 @@ function App() {
   const [agentRuns, setAgentRuns] = useState([]);
   const [proposals, setProposals] = useState([]);
   const [approvalEvents, setApprovalEvents] = useState([]);
+  const [localRunners, setLocalRunners] = useState([]);
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
   const [demoPortalProjectId, setDemoPortalProjectId] = useState("");
@@ -77,16 +78,18 @@ function App() {
   }
 
   async function loadCommandCenterState() {
-    const [status, runData, proposalData] = await Promise.all([
+    const [status, runData, proposalData, runnerData] = await Promise.all([
       apiJson("/api/command-center/status"),
       apiJson("/api/agent-runs"),
       apiJson("/api/proposals"),
+      apiJson("/api/runners"),
     ]);
     setCommandCenterStatus(status);
     setAgentRuns(runData.runs || []);
     setProposals(proposalData.proposals || []);
     setApprovalEvents(proposalData.approvalEvents || []);
-    return { status, runData, proposalData };
+    setLocalRunners(runnerData.runners || []);
+    return { status, runData, proposalData, runnerData };
   }
 
   useEffect(() => {
@@ -303,7 +306,8 @@ function App() {
   const serviceCount = projects.reduce((count, project) => count + project.services.length, 0);
   const commandCenterLoaded = Boolean(commandCenterStatus);
   const hostedMode = Boolean(commandCenterStatus?.hosted);
-  const localRunnerPaired = Boolean(commandCenterStatus?.localRunnerPaired);
+  const activeLocalRunners = localRunners.filter((runner) => runner.paired);
+  const localRunnerPaired = Boolean(commandCenterStatus?.localRunnerPaired || activeLocalRunners.length);
   const localControlsEnabled = commandCenterLoaded && (!hostedMode || localRunnerPaired);
   const activeMachine = ridgeFabric?.editSession?.currentHost || ridgeFabric?.editSession?.active?.host || "Local";
   const navigationItems = [
@@ -408,6 +412,7 @@ function App() {
           root={root}
           hostedMode={hostedMode}
           localRunnerPaired={localRunnerPaired}
+          localRunners={localRunners}
           onOpenProjects={() => openView("projects")}
           onOpenFabric={() => openView("fabric")}
           onOpenPorts={() => setShowPortTree(true)}
@@ -487,6 +492,8 @@ function App() {
             ["Execution layer", "Local Forge API"],
             ["Hosted mode", hostedMode ? "Enabled" : "Disabled"],
             ["Local runner", localRunnerPaired ? "Paired" : "Not paired"],
+            ["Known runners", localRunners.length],
+            ["Active runners", activeLocalRunners.length],
           ]}
         />
       ) : activeView === "automation" ? (

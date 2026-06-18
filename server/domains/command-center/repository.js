@@ -8,8 +8,10 @@ const AGENT_RUNS_FILE = path.join(DATA_DIR, "agent-runs.json");
 const PROPOSALS_FILE = path.join(DATA_DIR, "proposals.json");
 const APPROVAL_EVENTS_FILE = path.join(DATA_DIR, "approval-events.json");
 const FINDINGS_FILE = path.join(DATA_DIR, "findings.json");
+const LOCAL_RUNNERS_FILE = path.join(DATA_DIR, "local-runners.json");
 let commandCenterSql = null;
 let schemaReady = false;
+const RUNNER_STALE_MS = 2 * 60 * 1000;
 
 function databaseUrl() {
   return process.env.COMMAND_CENTER_DATABASE_URL || process.env.DATABASE_URL || "";
@@ -109,6 +111,49 @@ function agentRunFromRow(row) {
   };
 }
 
+function localRunnerFromRow(row) {
+  return normalizeRunner({
+    id: row.id,
+    machineId: row.machine_id,
+    displayName: row.display_name,
+    hostname: row.hostname,
+    username: row.username,
+    platform: row.platform,
+    architecture: row.architecture,
+    workingDirectory: row.working_directory,
+    capabilities: parseJson(row.capabilities, []),
+    metadata: parseJson(row.metadata, {}),
+    status: row.status,
+    lastSeenAt: row.last_seen_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  });
+}
+
+function normalizeRunner(input = {}) {
+  const lastSeenAt = input.lastSeenAt || input.updatedAt || input.createdAt || "";
+  const lastSeenTime = Date.parse(lastSeenAt);
+  const stale = !lastSeenTime || Date.now() - lastSeenTime > RUNNER_STALE_MS;
+  return {
+    id: input.id || input.machineId || "local",
+    machineId: input.machineId || input.id || "local",
+    displayName: input.displayName || input.hostname || input.machineId || "Local Runner",
+    hostname: input.hostname || "",
+    username: input.username || "",
+    platform: input.platform || "",
+    architecture: input.architecture || "",
+    workingDirectory: input.workingDirectory || "",
+    capabilities: normalizeArray(input.capabilities),
+    metadata: normalizeObject(input.metadata),
+    status: stale ? "stale" : input.status || "online",
+    paired: !stale && (input.status || "online") === "online",
+    stale,
+    lastSeenAt,
+    createdAt: input.createdAt || lastSeenAt,
+    updatedAt: input.updatedAt || lastSeenAt,
+  };
+}
+
 async function ensureSchema(sql) {
   if (schemaReady) return;
   await sql`
@@ -171,6 +216,24 @@ async function ensureSchema(sql) {
       decided_by text not null default 'owner',
       comment text not null default '',
       created_at timestamptz not null default now()
+    )
+  `;
+  await sql`
+    create table if not exists local_runners (
+      id text primary key,
+      machine_id text not null,
+      display_name text not null default '',
+      hostname text not null default '',
+      username text not null default '',
+      platform text not null default '',
+      architecture text not null default '',
+      working_directory text not null default '',
+      capabilities jsonb not null default '[]'::jsonb,
+      metadata jsonb not null default '{}'::jsonb,
+      status text not null default 'online',
+      last_seen_at timestamptz not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
     )
   `;
   schemaReady = true;
@@ -254,6 +317,81 @@ export async function listApprovalEvents(proposalId = "") {
   return events
     .filter((event) => !proposalId || event.proposalId === proposalId)
     .sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")));
+}
+
+export async function listLocalRunners() {
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    const rows = await sql`
+      select *
+      from local_runners
+      order by last_seen_at desc
+      limit 50
+    `;
+    return rows.map(localRunnerFromRow);
+  }
+
+  const runners = normalizeArray(await readJson(LOCAL_RUNNERS_FILE, []));
+  return runners
+    .map(normalizeRunner)
+    .sort((left, right) => String(right.lastSeenAt || "").localeCompare(String(left.lastSeenAt || "")));
+}
+
+export async function activeLocalRunners() {
+  const runners = await listLocalRunners();
+  return runners.filter((runner) => runner.paired);
+}
+
+export async function upsertLocalRunner(input = {}) {
+  const timestamp = nowIso();
+  const runner = normalizeRunner({
+    ...input,
+    id: input.id || input.machineId,
+    machineId: input.machineId || input.id,
+    status: input.status || "online",
+    lastSeenAt: timestamp,
+    createdAt: input.createdAt || timestamp,
+    updatedAt: timestamp,
+  });
+
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    await sql`
+      insert into local_runners (
+        id, machine_id, display_name, hostname, username, platform, architecture, working_directory,
+        capabilities, metadata, status, last_seen_at, created_at, updated_at
+      )
+      values (
+        ${runner.id}, ${runner.machineId}, ${runner.displayName}, ${runner.hostname}, ${runner.username},
+        ${runner.platform}, ${runner.architecture}, ${runner.workingDirectory},
+        ${serializeJson(runner.capabilities)}::jsonb, ${serializeJson(runner.metadata)}::jsonb,
+        ${runner.status}, ${runner.lastSeenAt}, ${runner.createdAt}, ${runner.updatedAt}
+      )
+      on conflict (id) do update set
+        machine_id = excluded.machine_id,
+        display_name = excluded.display_name,
+        hostname = excluded.hostname,
+        username = excluded.username,
+        platform = excluded.platform,
+        architecture = excluded.architecture,
+        working_directory = excluded.working_directory,
+        capabilities = excluded.capabilities,
+        metadata = excluded.metadata,
+        status = excluded.status,
+        last_seen_at = excluded.last_seen_at,
+        updated_at = excluded.updated_at
+    `;
+    return runner;
+  }
+
+  const runners = normalizeArray(await readJson(LOCAL_RUNNERS_FILE, []));
+  const index = runners.findIndex((candidate) => (candidate.id || candidate.machineId) === runner.id);
+  if (index >= 0) runners[index] = { ...runners[index], ...runner };
+  else runners.unshift(runner);
+  await writeJson(LOCAL_RUNNERS_FILE, runners.slice(0, 50));
+  return runner;
 }
 
 export async function createAgentRun(input = {}) {

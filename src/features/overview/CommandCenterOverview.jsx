@@ -18,6 +18,7 @@ export function CommandCenterOverview({
   root,
   hostedMode,
   localRunnerPaired,
+  localRunners,
   onOpenProjects,
   onOpenFabric,
   onOpenPorts,
@@ -31,6 +32,8 @@ export function CommandCenterOverview({
   const fabricUnknown = ridgeFabric?.counts?.unknown || 0;
   const fabricDevices = ridgeFabric?.counts?.devices || 0;
   const operationsStatus = operationsLibrary?.validation?.status || "Not checked";
+  const activeRunners = (localRunners || []).filter((runner) => runner.paired);
+  const latestRunner = activeRunners[0] || (localRunners || [])[0];
   const attentionItems = [
     ...unmanagedRunning.map((project) => ({
       key: `unmanaged-${project.id}`,
@@ -139,6 +142,8 @@ export function CommandCenterOverview({
             <StatusLine label="Hosted Ops" value={hostedMode ? "Online" : "Local"} />
             <StatusLine label="Local runner" value={localRunnerPaired ? "Paired" : "Not paired"} tone={hostedMode && !localRunnerPaired ? "warning" : ""} />
             <StatusLine label="Local controls" value={hostedMode && !localRunnerPaired ? "Disabled" : "Enabled"} tone={hostedMode && !localRunnerPaired ? "warning" : ""} />
+            <StatusLine label="Known runners" value={(localRunners || []).length} />
+            <StatusLine label="Latest runner" value={latestRunner?.displayName || "None"} />
             <StatusLine label="Command queue" value="Neon" />
           </div>
         </section>
