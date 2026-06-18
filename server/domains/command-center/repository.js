@@ -85,6 +85,8 @@ function parseJson(value, fallback) {
 function proposalFromRow(row) {
   return {
     id: row.id,
+    proposalKey: row.proposal_key || "",
+    duplicateCount: 1,
     projectId: row.project_id,
     title: row.title,
     summary: row.summary,
@@ -379,6 +381,60 @@ function normalizeCommandRequest(input = {}) {
   };
 }
 
+function proposalKeyFor(input = {}) {
+  return [
+    input.projectId || input.project_id || "",
+    input.title || "",
+    input.suggestedExecutor || input.suggested_executor || "codex",
+  ]
+    .map((value) => String(value || "").trim().toLowerCase().replace(/\s+/g, " "))
+    .join("::");
+}
+
+function isOpenProposalStatus(status) {
+  return ["proposed", "deferred", "needs-evidence"].includes(status || "");
+}
+
+function collapseDuplicateOpenProposals(proposals = []) {
+  const result = [];
+  const openByKey = new Map();
+  for (const proposal of normalizeArray(proposals)) {
+    const normalized = {
+      duplicateCount: 1,
+      ...proposal,
+      proposalKey: proposal.proposalKey || proposalKeyFor(proposal),
+    };
+    if (!isOpenProposalStatus(normalized.status)) {
+      result.push(normalized);
+      continue;
+    }
+
+    const key = normalized.proposalKey;
+    if (!key) {
+      result.push(normalized);
+      continue;
+    }
+
+    const existingIndex = openByKey.get(key);
+    if (existingIndex === undefined) {
+      openByKey.set(key, result.length);
+      result.push(normalized);
+      continue;
+    }
+
+    const existing = result[existingIndex];
+    result[existingIndex] = {
+      ...existing,
+      ownerNotes: existing.ownerNotes || normalized.ownerNotes || "",
+      evidence: normalizeArray(existing.evidence).length ? existing.evidence : normalizeArray(normalized.evidence),
+      validationPlan: normalizeArray(existing.validationPlan).length ? existing.validationPlan : normalizeArray(normalized.validationPlan),
+      duplicateCount: (existing.duplicateCount || 1) + 1,
+    };
+  }
+
+  return result;
+}
+
 function normalizeRunner(input = {}) {
   const lastSeenAt = input.lastSeenAt || input.updatedAt || input.createdAt || "";
   const lastSeenTime = Date.parse(lastSeenAt);
@@ -452,10 +508,16 @@ async function ensureSchema(sql) {
       rollback_plan text not null default '',
       evidence jsonb not null default '[]'::jsonb,
       owner_notes text not null default '',
+      proposal_key text not null default '',
       created_by_agent_run_id text references agent_runs(id) on delete set null,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     )
+  `;
+  await sql`alter table proposals add column if not exists proposal_key text not null default ''`;
+  await sql`
+    create index if not exists proposals_lookup_key_idx
+    on proposals (proposal_key, status, updated_at desc)
   `;
   await sql`
     create table if not exists approval_events (
@@ -651,10 +713,10 @@ export async function listProposals() {
       order by updated_at desc
       limit 200
     `;
-    return rows.map(proposalFromRow);
+    return collapseDuplicateOpenProposals(rows.map(proposalFromRow));
   }
   const proposals = await readJson(PROPOSALS_FILE, []);
-  return normalizeArray(proposals).sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")));
+  return collapseDuplicateOpenProposals(normalizeArray(proposals).sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || ""))));
 }
 
 export async function listApprovalEvents(proposalId = "") {
@@ -1578,8 +1640,10 @@ export async function createAgentRun(input = {}) {
 
 export async function createProposal(input = {}) {
   const timestamp = nowIso();
+  const proposalKey = input.proposalKey || proposalKeyFor(input);
   const proposal = {
     id: input.id || idFor("proposal"),
+    proposalKey,
     projectId: input.projectId || "",
     title: input.title || "Needs review",
     summary: input.summary || "",
@@ -1601,22 +1665,108 @@ export async function createProposal(input = {}) {
   const sql = db();
   if (sql) {
     await ensureSchema(sql);
+    const existingRows = proposalKey
+      ? await sql`
+          select *
+          from proposals
+          where status in ('proposed', 'deferred', 'needs-evidence')
+            and (
+              proposal_key = ${proposalKey}
+              or (
+                proposal_key = ''
+                and coalesce(project_id, '') = ${proposal.projectId}
+                and title = ${proposal.title}
+                and suggested_executor = ${proposal.suggestedExecutor}
+              )
+            )
+          order by updated_at desc
+        `
+      : [];
+    if (existingRows.length) {
+      const current = proposalFromRow(existingRows[0]);
+      const duplicateProposals = existingRows.map(proposalFromRow);
+      const duplicateWithNotes = duplicateProposals.find((candidate) => String(candidate.ownerNotes || "").trim());
+      const next = {
+        ...current,
+        proposalKey,
+        summary: proposal.summary || current.summary,
+        whyNow: proposal.whyNow || current.whyNow,
+        risk: proposal.risk || current.risk,
+        confidence: proposal.confidence || current.confidence,
+        targetBranchPolicy: current.targetBranchPolicy || proposal.targetBranchPolicy,
+        validationPlan: proposal.validationPlan.length ? proposal.validationPlan : current.validationPlan,
+        rollbackPlan: proposal.rollbackPlan || current.rollbackPlan,
+        evidence: proposal.evidence.length ? proposal.evidence : current.evidence,
+        ownerNotes: proposal.ownerNotes || current.ownerNotes || duplicateWithNotes?.ownerNotes || "",
+        createdByAgentRunId: proposal.createdByAgentRunId || current.createdByAgentRunId,
+        updatedAt: timestamp,
+      };
+      await sql`
+        update proposals
+        set proposal_key = ${next.proposalKey},
+            summary = ${next.summary},
+            why_now = ${next.whyNow},
+            risk = ${next.risk},
+            confidence = ${next.confidence},
+            target_branch_policy = ${next.targetBranchPolicy},
+            validation_plan = ${serializeJson(next.validationPlan)}::jsonb,
+            rollback_plan = ${next.rollbackPlan},
+            evidence = ${serializeJson(next.evidence)}::jsonb,
+            owner_notes = ${next.ownerNotes},
+            created_by_agent_run_id = ${next.createdByAgentRunId || null},
+            updated_at = ${next.updatedAt}
+        where id = ${next.id}
+      `;
+      return next;
+    }
     await sql`
       insert into proposals (
         id, project_id, title, summary, why_now, risk, confidence, status, suggested_executor, target_branch_policy,
-        validation_plan, rollback_plan, evidence, owner_notes, created_by_agent_run_id, created_at, updated_at
+        validation_plan, rollback_plan, evidence, owner_notes, proposal_key, created_by_agent_run_id, created_at, updated_at
       )
       values (
         ${proposal.id}, ${proposal.projectId || null}, ${proposal.title}, ${proposal.summary}, ${proposal.whyNow}, ${proposal.risk},
         ${proposal.confidence}, ${proposal.status}, ${proposal.suggestedExecutor}, ${proposal.targetBranchPolicy},
         ${serializeJson(proposal.validationPlan)}::jsonb, ${proposal.rollbackPlan}, ${serializeJson(proposal.evidence)}::jsonb,
-        ${proposal.ownerNotes}, ${proposal.createdByAgentRunId || null}, ${proposal.createdAt}, ${proposal.updatedAt}
+        ${proposal.ownerNotes}, ${proposal.proposalKey}, ${proposal.createdByAgentRunId || null}, ${proposal.createdAt}, ${proposal.updatedAt}
       )
     `;
     return proposal;
   }
 
   const proposals = normalizeArray(await readJson(PROPOSALS_FILE, []));
+  const existingIndex = proposalKey
+    ? proposals.findIndex((candidate) => (
+        isOpenProposalStatus(candidate.status)
+        && (
+          candidate.proposalKey === proposalKey
+          || (
+            !candidate.proposalKey
+            && String(candidate.projectId || "") === proposal.projectId
+            && String(candidate.title || "") === proposal.title
+            && String(candidate.suggestedExecutor || "codex") === proposal.suggestedExecutor
+          )
+        )
+      ))
+    : -1;
+  if (existingIndex >= 0) {
+    proposals[existingIndex] = {
+      ...proposals[existingIndex],
+      proposalKey,
+      summary: proposal.summary || proposals[existingIndex].summary,
+      whyNow: proposal.whyNow || proposals[existingIndex].whyNow,
+      risk: proposal.risk || proposals[existingIndex].risk,
+      confidence: proposal.confidence || proposals[existingIndex].confidence,
+      validationPlan: proposal.validationPlan.length ? proposal.validationPlan : proposals[existingIndex].validationPlan,
+      rollbackPlan: proposal.rollbackPlan || proposals[existingIndex].rollbackPlan,
+      evidence: proposal.evidence.length ? proposal.evidence : proposals[existingIndex].evidence,
+      ownerNotes: proposal.ownerNotes || proposals[existingIndex].ownerNotes,
+      createdByAgentRunId: proposal.createdByAgentRunId || proposals[existingIndex].createdByAgentRunId,
+      updatedAt: timestamp,
+    };
+    await writeJson(PROPOSALS_FILE, proposals);
+    return proposals[existingIndex];
+  }
   proposals.unshift(proposal);
   await writeJson(PROPOSALS_FILE, proposals);
   return proposal;

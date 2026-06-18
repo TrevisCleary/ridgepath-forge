@@ -554,3 +554,13 @@ This gives an immediate command-center feel without destabilizing start/stop/run
 - Verified `npm.cmd run build`.
 - Browser-verified local Runtime on `http://127.0.0.1:3060`: `Sync Projects`, `Sync Fabric`, and `Sync Ops Library` actions render above the command form.
 - Remaining next step: execute one approved sync request from the hosted UI and confirm the runner updates Neon plus audit state end to end.
+
+### Approval Proposal Deduplication Pass
+
+- Added deterministic `proposal_key` support to proposal storage so repeated read-only reviews update an existing active recommendation instead of creating duplicate proposal cards.
+- Added repository-level read compaction for open proposal duplicates, preserving useful owner feedback from older matching records.
+- Added a compacted-review indicator to Approval Queue cards.
+- Verified repeated read-only reviews for `annual-evaluations` created two new agent-run records but did not increase the Neon proposal count: before `4`, after two repeated reviews `4`.
+- Verified the local `/api/proposals` read model returns two active proposal cards with `duplicateCount: 2` instead of four duplicate cards.
+- Browser-verified local Approval Queue on `http://127.0.0.1:3060`: two cards render, each shows `2 matching reviews compacted`, and the prior PM-initialization feedback remains visible.
+- Remaining next step: add an owner-visible proposal detail/history surface so compacted duplicates and approval events can be inspected without reintroducing card noise.

@@ -119,6 +119,7 @@ export function ApprovalQueue({
                   ) : null}
                   {packet?.claimedByRunnerId ? <span>Claimed by: {packet.claimedByRunnerId}</span> : null}
                   {latestPacketEvent ? <span>Packet event: {formatStatus(latestPacketEvent.eventType)}</span> : null}
+                  {proposal.duplicateCount > 1 ? <span>{proposal.duplicateCount} matching reviews compacted</span> : null}
                   <span>Risk: {proposal.risk}</span>
                   <span>Confidence: {proposal.confidence}</span>
                   <span>{formatTime(proposal.updatedAt || proposal.createdAt)}</span>
