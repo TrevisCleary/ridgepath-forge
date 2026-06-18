@@ -309,6 +309,18 @@ Current behavior:
 - Hosted Overview and the Operations modal can show the real validation status.
 - On 2026-06-18, `411100-PCK39` synced Operations Library status as `Valid` with 0 issues from `C:\Development\Shared\codex-operations-library`.
 
+## Vercel Deployment Hygiene
+
+The intended hosted Ops project is `ridgepath-ops`, with `ops.ridgepath.io` assigned to its latest production deployment.
+
+Operational notes:
+
+- Do not run `vercel link` interactively from this repository unless the target project is confirmed as `ridgepath-ops`.
+- A temporary accidental Vercel project named `ridgepath-forge` was created during protected API probing.
+- On 2026-06-18, `vercel git disconnect --yes` was run against the accidental `ridgepath-forge` project, disconnecting `TrevisCleary/ridgepath-forge` from that project.
+- Historical `ridgepath-forge.*` deployments may still appear in Vercel, but future Git pushes should deploy only the intended `ridgepath-ops` project.
+- Keep local `.vercel` metadata out of the working tree unless intentionally linked for a one-off Vercel operation; remove it immediately after the operation.
+
 ## Waypoint Agent Loop Guardrails
 
 Default allowed:
