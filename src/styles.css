@@ -883,6 +883,187 @@ h3 {
   font-weight: 750;
 }
 
+.automation-workspace {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 12px;
+  overflow: hidden;
+}
+
+.automation-runner-summary {
+  min-width: 190px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px 12px;
+}
+
+.automation-runner-summary span,
+.automation-runner-summary small {
+  color: var(--color-text-secondary);
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.automation-runner-summary strong {
+  color: var(--color-text-primary);
+}
+
+.automation-metric.success svg {
+  color: var(--color-text-success);
+}
+
+.automation-metric.warning svg {
+  color: var(--color-text-warning);
+}
+
+.automation-quick-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.automation-quick-actions,
+.automation-review-target,
+.automation-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.automation-review-target {
+  justify-content: end;
+}
+
+.automation-review-target select {
+  width: min(280px, 100%);
+  height: 34px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--color-text-primary);
+  padding: 0 9px;
+  font-weight: 750;
+}
+
+.automation-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.85fr) minmax(280px, 0.85fr);
+  gap: 10px;
+  overflow: hidden;
+}
+
+.automation-panel {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 9px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.automation-workload-list,
+.automation-device-list,
+.automation-activity-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  overflow: auto;
+}
+
+.automation-workload-card,
+.automation-device-card,
+.automation-activity-card {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: var(--color-background-secondary);
+  padding: 10px;
+}
+
+.automation-workload-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.automation-workload-card.active,
+.automation-device-card.known {
+  border-color: var(--color-border-success);
+  background: var(--color-background-success);
+}
+
+.automation-card-title {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+}
+
+.automation-card-title svg {
+  color: var(--color-brand-teal);
+}
+
+.automation-workload-card.active .automation-card-title svg,
+.automation-device-card.known .automation-card-title svg {
+  color: var(--color-text-success);
+}
+
+.automation-card-title strong,
+.automation-card-title small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-card-title small,
+.automation-device-card p,
+.automation-activity-card p {
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.automation-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.automation-card-meta span {
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--color-text-secondary);
+  padding: 3px 7px;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.automation-card-meta span.warn {
+  border-color: var(--color-border-warning);
+  background: var(--color-background-warning);
+  color: var(--color-text-warning);
+}
+
 .publishing-workspace {
   min-height: 0;
   display: grid;
@@ -3547,6 +3728,9 @@ h3 {
   .settings-grid,
   .settings-guardrail-grid,
   .runner-settings-card,
+  .automation-grid,
+  .automation-quick-panel,
+  .automation-workload-card,
   .publishing-card,
   .publishing-url {
     grid-template-columns: 1fr;
@@ -3561,6 +3745,10 @@ h3 {
   .overview-hero {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .automation-review-target {
+    justify-content: flex-start;
   }
 
   .topbar,

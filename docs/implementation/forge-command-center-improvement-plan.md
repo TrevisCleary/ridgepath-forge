@@ -647,3 +647,15 @@ This gives an immediate command-center feel without destabilizing start/stop/run
 - Preserved the rule that localhost/private URLs are treated as local preview state, not production-ready shareable surfaces.
 - Verified locally through the live Forge UI: Publishing rendered 16 catalog projects, correctly counted one production URL and 15 production URL gaps, filtered to the production-ready RidgePath site, and opened the existing Demo Portal review modal without saving state.
 - Remaining next step: deploy the updated production site, then continue the Automation workspace pass.
+
+### Automation Workspace Pass
+
+- Replaced the Automation placeholder with a full-page workload operations workspace.
+- Added metrics for project service inventory, detected open workloads, Fabric automation hosts, and open command/proposal queue load.
+- Added owner-click quick actions for project catalog sync, Fabric sync, and Operations Library sync through the paired local runner command queue.
+- Added a read-only project review selector so Automation can seed improvement proposals without leaving the workload page.
+- Added project workload cards that surface service counts, runnable scripts, open/running services, dirty Git state, and direct project/review actions.
+- Added Fabric workload-host cards that distinguish documented automation hosts from devices that still need workload inventory.
+- Added recent automation activity from agent runs and command requests so the page shows what the local controller and agents have actually done.
+- Verified locally through the live Forge UI: Automation rendered service, runner, Fabric, queue, workload, and activity data; the project workload Open action navigated to project detail; console output stayed clean apart from the standard React DevTools info line.
+- Remaining next step: deploy the updated production site, then continue hardening the command-center workflows against hosted/local edge cases.

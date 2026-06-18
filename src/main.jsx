@@ -19,6 +19,7 @@ import {
 import { AgentRuns } from "./features/command-center/AgentRuns.jsx";
 import { ApprovalQueue } from "./features/command-center/ApprovalQueue.jsx";
 import { CommandQueue } from "./features/command-center/CommandQueue.jsx";
+import { AutomationWorkspace } from "./features/automation/AutomationWorkspace.jsx";
 import { DemoPortalModal } from "./features/demo-portal/DemoPortalModal.jsx";
 import { OperationsLibraryWorkspace } from "./features/operations-library/OperationsLibraryWorkspace.jsx";
 import { CommandCenterOverview } from "./features/overview/CommandCenterOverview.jsx";
@@ -750,15 +751,18 @@ function App() {
           onUpdateCommand={updateLocalCommandRequest}
         />
       ) : activeView === "automation" ? (
-        <CommandPlaceholder
-          title="Automation Workloads"
-          icon={<Workflow size={20} />}
-          detail="Scheduled tasks, services, runners, browser automation, and device workload links will become first-class records here."
-          rows={[
-            ["Known projects", projects.length],
-            ["Fabric devices", ridgeFabric?.counts?.devices || "Load Fabric"],
-            ["Registry model", "Syncthing JSON"],
-          ]}
+        <AutomationWorkspace
+          projects={projects}
+          fabric={ridgeFabric}
+          agentRuns={agentRuns}
+          proposals={proposals}
+          commands={commandRequests}
+          runners={localRunners}
+          busy={busy}
+          localControlsEnabled={localControlsEnabled}
+          onOpenProject={(projectId) => setSelectedId(projectId)}
+          onQueueCommand={createLocalCommandRequest}
+          onRunProjectReview={runProjectReview}
         />
       ) : activeView === "publishing" ? (
         <PublishingWorkspace
