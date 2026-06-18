@@ -5,6 +5,9 @@ import "./CommandQueue.css";
 const COMMAND_TYPES = [
   { value: "project-review", label: "Project review" },
   { value: "fabric-inventory", label: "Fabric inventory" },
+  { value: "fabric-registry-sync", label: "Fabric sync" },
+  { value: "fabric-device-update", label: "Fabric device update" },
+  { value: "fabric-device-remove", label: "Fabric device remove" },
   { value: "start-project", label: "Start project" },
   { value: "stop-project", label: "Stop project" },
   { value: "restart-project", label: "Restart project" },

@@ -11,6 +11,7 @@
     "runner:heartbeat": "node scripts/local-runner-heartbeat.mjs",
     "runner:queue": "node scripts/local-runner-queue.mjs",
     "runner:queue:start": "node scripts/local-runner-queue.mjs --watch",
+    "runner:sync-fabric": "node scripts/sync-fabric-registry.mjs",
     "runner:sync-projects": "node scripts/sync-project-catalog.mjs",
     "runner:start": "node scripts/local-runner-heartbeat.mjs --watch",
     "build": "vite build",

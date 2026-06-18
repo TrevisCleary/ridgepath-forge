@@ -253,6 +253,14 @@ function App() {
   }
 
   async function saveRidgeFabricDevice(stableIdentifier, values) {
+    if (hostedMode) {
+      return queueHostedCommand({
+        commandType: "fabric-device-update",
+        target: stableIdentifier,
+        reason: `Owner requested Ridge Fabric device update for ${stableIdentifier} from hosted Ops.`,
+        payload: values,
+      });
+    }
     setBusy(`ridge-fabric:${stableIdentifier}`);
     setActionError("");
     setActionNotice("");
@@ -274,6 +282,13 @@ function App() {
   }
 
   async function deleteRidgeFabricDevice(stableIdentifier) {
+    if (hostedMode) {
+      return queueHostedCommand({
+        commandType: "fabric-device-remove",
+        target: stableIdentifier,
+        reason: `Owner requested removing ${stableIdentifier} from Ridge Fabric from hosted Ops.`,
+      });
+    }
     setBusy(`ridge-fabric-delete:${stableIdentifier}`);
     setActionError("");
     setActionNotice("");

@@ -189,6 +189,7 @@ Current runner behavior:
 - `npm.cmd run runner:queue` writes a heartbeat and reads approved queued commands once.
 - `npm.cmd run runner:queue:start` watches approved queued commands every `RIDGEPATH_RUNNER_QUEUE_SECONDS` seconds, defaulting to 60.
 - `npm.cmd run runner:sync-projects` reads the local Forge API and publishes the hosted project catalog into Neon.
+- `npm.cmd run runner:sync-fabric` reads the local Forge API and publishes the hosted Ridge Fabric snapshot into Neon.
 - The runner loads `.env.local` or `.env` and uses `COMMAND_CENTER_DATABASE_URL`.
 - Runner identity defaults to the Windows hostname and can be overridden with:
   - `RIDGEPATH_RUNNER_ID`
@@ -201,6 +202,7 @@ Current capabilities reported by the heartbeat:
 
 - `heartbeat`
 - `project-catalog-sync`
+- `fabric-registry-sync`
 - `project-inventory`
 - `fabric-inventory`
 - `project-review`
@@ -240,6 +242,19 @@ Current behavior:
 - Hosted Ops reads the Neon project catalog and can display Projects without direct filesystem access.
 - Local start/stop/open-folder actions remain disabled until routed through approved runner commands.
 - On 2026-06-18, `411100-PCK39` synced 16 projects from `C:\Development\Projects`.
+
+## Hosted Fabric Snapshot
+
+Hosted `/api/ridge-fabric` now reads the latest synced Ridge Fabric snapshot from Neon instead of returning an empty registry.
+
+Current behavior:
+
+- Syncthing JSON/Markdown remains the canonical Ridge Fabric source of truth.
+- Local Forge remains responsible for filesystem reads and writes.
+- `runner:sync-fabric` copies the local Fabric registry snapshot into Neon.
+- Hosted Fabric can display devices, files, counts, and conflicts from the latest sync.
+- Hosted Fabric edits, deletes, and open-folder requests are queued as local runner commands instead of direct hosted filesystem writes.
+- On 2026-06-18, `411100-PCK39` synced 5 Fabric devices from `C:\Development\Shared\ridge-fabric-registry`.
 
 ## Waypoint Agent Loop Guardrails
 

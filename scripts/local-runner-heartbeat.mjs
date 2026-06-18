@@ -42,6 +42,8 @@ async function sendHeartbeat() {
     workingDirectory: repoRoot,
     capabilities: [
       "heartbeat",
+      "project-catalog-sync",
+      "fabric-registry-sync",
       "project-inventory",
       "fabric-inventory",
       "project-review",

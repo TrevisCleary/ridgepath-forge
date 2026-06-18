@@ -4,14 +4,12 @@ import path from "node:path";
 import process from "node:process";
 
 const ROOT = process.cwd();
-const WATCH = process.argv.includes("--watch");
-const DEFAULT_INTERVAL_SECONDS = 60;
-const MIN_INTERVAL_SECONDS = 15;
+const DEFAULT_LOCAL_API = "http://127.0.0.1:3059";
 
 loadEnvFile(path.join(ROOT, ".env.local"));
 loadEnvFile(path.join(ROOT, ".env"));
 
-const { listQueuedCommandsForRunner, upsertLocalRunner } = await import("../server/domains/command-center/repository.js");
+const { syncRidgeFabricSnapshot, upsertLocalRunner } = await import("../server/domains/command-center/repository.js");
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -62,16 +60,19 @@ function runnerIdentity() {
   };
 }
 
-async function tick() {
+async function fetchLocalFabric() {
+  const baseUrl = process.env.RIDGEPATH_LOCAL_FORGE_API || DEFAULT_LOCAL_API;
+  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/ridge-fabric`);
+  if (!response.ok) {
+    throw new Error(`Local Forge API returned HTTP ${response.status}. Start local Forge API before syncing Fabric.`);
+  }
+  return await response.json();
+}
+
+async function main() {
   const runner = await upsertLocalRunner(runnerIdentity());
-  const commands = await listQueuedCommandsForRunner(runner.id);
-  const summary = commands.map((command) => ({
-    id: command.id,
-    commandType: command.commandType,
-    projectId: command.projectId,
-    target: command.target,
-    approvedAt: command.approvedAt,
-  }));
+  const registry = await fetchLocalFabric();
+  const snapshot = await syncRidgeFabricSnapshot(registry, { machineId: runner.id });
   console.log(JSON.stringify({
     ok: true,
     runner: {
@@ -80,22 +81,10 @@ async function tick() {
       status: runner.status,
       lastSeenAt: runner.lastSeenAt,
     },
-    queuedCommandCount: commands.length,
-    execution: "disabled",
-    commands: summary,
-  }));
-}
-
-async function main() {
-  await tick();
-  if (!WATCH) return;
-  const intervalSeconds = Math.max(MIN_INTERVAL_SECONDS, Number(process.env.RIDGEPATH_RUNNER_QUEUE_SECONDS || DEFAULT_INTERVAL_SECONDS) || DEFAULT_INTERVAL_SECONDS);
-  console.log(`RidgePath local runner queue monitor active every ${intervalSeconds}s. Execution is disabled.`);
-  setInterval(() => {
-    tick().catch((error) => {
-      console.error(JSON.stringify({ ok: false, error: error.message || String(error) }));
-    });
-  }, intervalSeconds * 1000);
+    root: snapshot.root,
+    deviceCount: snapshot.devices.length,
+    conflictCount: snapshot.conflicts.length,
+  }, null, 2));
 }
 
 main().catch((error) => {

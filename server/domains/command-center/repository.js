@@ -12,6 +12,7 @@ const LOCAL_RUNNERS_FILE = path.join(DATA_DIR, "local-runners.json");
 const COMMAND_REQUESTS_FILE = path.join(DATA_DIR, "command-requests.json");
 const COMMAND_EVENTS_FILE = path.join(DATA_DIR, "command-events.json");
 const PROJECT_CATALOG_FILE = path.join(DATA_DIR, "project-catalog.json");
+const FABRIC_REGISTRY_FILE = path.join(DATA_DIR, "fabric-registry.json");
 let commandCenterSql = null;
 let schemaReady = false;
 const RUNNER_STALE_MS = 2 * 60 * 1000;
@@ -240,6 +241,35 @@ function normalizeProjectCatalogRecord(input = {}) {
   };
 }
 
+function normalizeFabricRegistrySnapshot(input = {}) {
+  const timestamp = input.observedAt || input.updatedAt || nowIso();
+  const editSession = normalizeObject(input.editSession);
+  return {
+    hosted: Boolean(input.hosted),
+    root: input.root || "Ridge Fabric",
+    devices: normalizeArray(input.devices),
+    files: normalizeArray(input.files),
+    conflicts: normalizeArray(input.conflicts),
+    counts: {
+      devices: Number(input.counts?.devices || normalizeArray(input.devices).length || 0),
+      confirmed: Number(input.counts?.confirmed || 0),
+      unknown: Number(input.counts?.unknown || 0),
+      followUps: Number(input.counts?.followUps || 0),
+    },
+    editSession: {
+      mode: editSession.mode || "read-only",
+      currentHost: editSession.currentHost || input.machineId || "hosted",
+      active: editSession.active || null,
+      readOnly: editSession.readOnly !== undefined ? Boolean(editSession.readOnly) : true,
+      conflictCount: Number(editSession.conflictCount || normalizeArray(input.conflicts).length || 0),
+    },
+    machineId: input.machineId || "",
+    observedAt: timestamp,
+    updatedAt: input.updatedAt || timestamp,
+    message: input.message || "",
+  };
+}
+
 function normalizeCommandRequest(input = {}) {
   const timestamp = input.createdAt || input.updatedAt || nowIso();
   const approvalStatus = COMMAND_APPROVAL_STATUSES.has(input.approvalStatus) ? input.approvalStatus : "pending";
@@ -405,6 +435,16 @@ async function ensureSchema(sql) {
       project_management jsonb not null default '{}'::jsonb,
       metadata jsonb not null default '{}'::jsonb,
       created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )
+  `;
+  await sql`
+    create table if not exists ridge_fabric_snapshots (
+      id text primary key,
+      root text not null default '',
+      machine_id text not null default '',
+      registry jsonb not null default '{}'::jsonb,
+      observed_at timestamptz not null,
       updated_at timestamptz not null default now()
     )
   `;
@@ -648,6 +688,69 @@ export async function syncCommandCenterProjects(projects = [], context = {}) {
     }));
   }
   return results;
+}
+
+export async function getRidgeFabricSnapshot() {
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    const rows = await sql`
+      select *
+      from ridge_fabric_snapshots
+      where id = 'current'
+      limit 1
+    `;
+    if (!rows.length) return normalizeFabricRegistrySnapshot({
+      hosted: true,
+      root: "Hosted RidgePath Ops",
+      message: "Hosted Fabric has not been synced yet. Run the local Fabric sync from a paired runner.",
+    });
+    return normalizeFabricRegistrySnapshot({
+      ...parseJson(rows[0].registry, {}),
+      root: rows[0].root,
+      machineId: rows[0].machine_id,
+      observedAt: rows[0].observed_at,
+      updatedAt: rows[0].updated_at,
+    });
+  }
+
+  return normalizeFabricRegistrySnapshot(await readJson(FABRIC_REGISTRY_FILE, {
+    hosted: true,
+    root: "Hosted RidgePath Ops",
+    message: "Hosted Fabric has not been synced yet. Run the local Fabric sync from a paired runner.",
+  }));
+}
+
+export async function syncRidgeFabricSnapshot(registry = {}, context = {}) {
+  const timestamp = nowIso();
+  const normalizedContext = normalizeObject(context);
+  const snapshot = normalizeFabricRegistrySnapshot({
+    ...normalizeObject(registry),
+    hosted: true,
+    machineId: normalizedContext.machineId || registry.machineId,
+    observedAt: timestamp,
+    updatedAt: timestamp,
+    message: "Hosted Fabric is reading the latest synced Ridge Fabric snapshot from Neon.",
+  });
+
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    await sql`
+      insert into ridge_fabric_snapshots (id, root, machine_id, registry, observed_at, updated_at)
+      values ('current', ${snapshot.root}, ${snapshot.machineId}, ${serializeJson(snapshot)}::jsonb, ${snapshot.observedAt}, ${snapshot.updatedAt})
+      on conflict (id) do update set
+        root = excluded.root,
+        machine_id = excluded.machine_id,
+        registry = excluded.registry,
+        observed_at = excluded.observed_at,
+        updated_at = excluded.updated_at
+    `;
+    return snapshot;
+  }
+
+  await writeJson(FABRIC_REGISTRY_FILE, snapshot);
+  return snapshot;
 }
 
 export async function listCommandRequests(filters = {}) {
