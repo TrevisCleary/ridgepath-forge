@@ -89,12 +89,13 @@ function App() {
   }
 
   async function loadCommandCenterState() {
-    const [status, runData, proposalData, runnerData, commandData] = await Promise.all([
-      apiJson("/api/command-center/status"),
+    const status = await apiJson("/api/command-center/status");
+    const hosted = Boolean(status?.hosted);
+    const [runData, proposalData, runnerData, commandData] = await Promise.all([
       apiJson("/api/agent-runs"),
       apiJson("/api/proposals"),
-      apiJson("/api/runners"),
-      apiJson("/api/commands"),
+      hosted ? apiJson("/api/runners") : Promise.resolve({ runners: [] }),
+      hosted ? apiJson("/api/commands") : Promise.resolve({ commands: [], events: [] }),
     ]);
     setCommandCenterStatus(status);
     setAgentRuns(runData.runs || []);
