@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { AgentRuns } from "./features/command-center/AgentRuns.jsx";
 import { ApprovalQueue } from "./features/command-center/ApprovalQueue.jsx";
+import { CommandQueue } from "./features/command-center/CommandQueue.jsx";
 import { DemoPortalModal } from "./features/demo-portal/DemoPortalModal.jsx";
 import { OperationsLibraryModal } from "./features/operations-library/OperationsLibraryModal.jsx";
 import { CommandCenterOverview } from "./features/overview/CommandCenterOverview.jsx";
@@ -50,6 +51,7 @@ function App() {
   const [proposals, setProposals] = useState([]);
   const [approvalEvents, setApprovalEvents] = useState([]);
   const [localRunners, setLocalRunners] = useState([]);
+  const [commandRequests, setCommandRequests] = useState([]);
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
   const [demoPortalProjectId, setDemoPortalProjectId] = useState("");
@@ -78,18 +80,20 @@ function App() {
   }
 
   async function loadCommandCenterState() {
-    const [status, runData, proposalData, runnerData] = await Promise.all([
+    const [status, runData, proposalData, runnerData, commandData] = await Promise.all([
       apiJson("/api/command-center/status"),
       apiJson("/api/agent-runs"),
       apiJson("/api/proposals"),
       apiJson("/api/runners"),
+      apiJson("/api/commands"),
     ]);
     setCommandCenterStatus(status);
     setAgentRuns(runData.runs || []);
     setProposals(proposalData.proposals || []);
     setApprovalEvents(proposalData.approvalEvents || []);
     setLocalRunners(runnerData.runners || []);
-    return { status, runData, proposalData, runnerData };
+    setCommandRequests(commandData.commands || []);
+    return { status, runData, proposalData, runnerData, commandData };
   }
 
   useEffect(() => {
@@ -284,6 +288,48 @@ function App() {
     }
   }
 
+  async function createLocalCommandRequest(values) {
+    setBusy("command-create");
+    setActionError("");
+    setActionNotice("");
+    try {
+      const command = await apiJson("/api/commands", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      await loadCommandCenterState();
+      setActionNotice(`Queued command request: ${command.commandType}. Execution remains disabled until the runner execution contract is complete.`);
+      return command;
+    } catch (error) {
+      setActionError(error.message || "Could not queue command request.");
+      return null;
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function updateLocalCommandRequest(commandId, patch) {
+    setBusy(commandId);
+    setActionError("");
+    setActionNotice("");
+    try {
+      const command = await apiJson(`/api/commands/${encodeURIComponent(commandId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      await loadCommandCenterState();
+      setActionNotice(`Updated command request: ${command.commandType}.`);
+      return command;
+    } catch (error) {
+      setActionError(error.message || "Could not update command request.");
+      return null;
+    } finally {
+      setBusy("");
+    }
+  }
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return projects.filter((project) => {
@@ -309,13 +355,14 @@ function App() {
   const activeLocalRunners = localRunners.filter((runner) => runner.paired);
   const localRunnerPaired = Boolean(commandCenterStatus?.localRunnerPaired || activeLocalRunners.length);
   const localControlsEnabled = commandCenterLoaded && (!hostedMode || localRunnerPaired);
+  const openCommandCount = commandRequests.filter((command) => ["pending", "approved"].includes(command.approvalStatus) && !["succeeded", "failed", "cancelled"].includes(command.executionStatus)).length;
   const activeMachine = ridgeFabric?.editSession?.currentHost || ridgeFabric?.editSession?.active?.host || "Local";
   const navigationItems = [
     { key: "overview", label: "Overview", icon: <Home size={18} /> },
     { key: "projects", label: "Projects", icon: <Code2 size={18} />, badge: projects.length },
     { key: "approval", label: "Approval Queue", icon: <ClipboardList size={18} />, badge: proposals.filter((proposal) => ["proposed", "needs-evidence", "deferred"].includes(proposal.status)).length },
     { key: "agent-runs", label: "Agent Runs", icon: <Activity size={18} />, badge: agentRuns.length },
-    { key: "runtime", label: "Runtime", icon: <Gauge size={18} />, badge: runningCount },
+    { key: "runtime", label: "Runtime", icon: <Gauge size={18} />, badge: openCommandCount || runningCount },
     { key: "fabric", label: "Fabric", icon: <Network size={18} />, badge: ridgeFabric?.counts?.devices || "" },
     { key: "automation", label: "Automation", icon: <Workflow size={18} /> },
     { key: "publishing", label: "Publishing", icon: <Globe2 size={18} /> },
@@ -482,19 +529,13 @@ function App() {
           localControlsEnabled={localControlsEnabled}
         />
       ) : activeView === "runtime" ? (
-        <CommandPlaceholder
-          title="Local Runtime"
-          icon={<Gauge size={20} />}
-          detail="Local agent status, port listeners, managed processes, logs, and action eligibility will land here."
-          rows={[
-            ["Running projects", runningCount],
-            ["Discovered services", serviceCount],
-            ["Execution layer", "Local Forge API"],
-            ["Hosted mode", hostedMode ? "Enabled" : "Disabled"],
-            ["Local runner", localRunnerPaired ? "Paired" : "Not paired"],
-            ["Known runners", localRunners.length],
-            ["Active runners", activeLocalRunners.length],
-          ]}
+        <CommandQueue
+          commands={commandRequests}
+          runners={localRunners}
+          projects={projects}
+          busy={busy}
+          onCreateCommand={createLocalCommandRequest}
+          onUpdateCommand={updateLocalCommandRequest}
         />
       ) : activeView === "automation" ? (
         <CommandPlaceholder

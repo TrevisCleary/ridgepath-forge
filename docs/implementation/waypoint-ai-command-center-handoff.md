@@ -201,7 +201,22 @@ Current capabilities reported by the heartbeat:
 - `project-review`
 - `local-actions-require-approval`
 
-Do not add command execution until the command table, approval policy, idempotency rules, and result/audit model are implemented.
+## Command Queue Foundation
+
+Hosted Ops now has a command-request queue, but local execution remains disabled.
+
+Current command queue behavior:
+
+- `/api/commands` lists and creates command requests.
+- `/api/commands/[commandId]` updates approval and execution state.
+- Command requests are persisted in Neon when `COMMAND_CENTER_DATABASE_URL` is configured.
+- Local JSON remains available as an offline fallback.
+- New requests require an owner reason and start as `approvalStatus: pending` and `executionStatus: blocked`.
+- Owner approval moves a blocked request to `executionStatus: queued`.
+- The Runtime page shows the queue and allows pending requests to be approved or cancelled.
+- The local runner does not claim, poll, or execute queued requests yet.
+
+Do not add command execution until runner polling, command claiming, idempotency, allowed command types, result capture, and audit validation are implemented.
 
 ## Waypoint Agent Loop Guardrails
 
@@ -229,8 +244,8 @@ Default denied without explicit owner approval:
 
 Deepen the approval-centered backend and UI foundation:
 
-1. Add Neon-backed findings and machine-observation tables to the implemented command-center repository.
-2. Expand the read-only project reviewer beyond dirty git/project-management initialization checks.
-3. Add proposal detail view with owner notes, branch target selection, and evidence drill-down.
-4. Add Waypoint scheduled runner that writes to the existing APIs/storage.
-5. Keep execution disabled until owner approval workflow and branch policy are fully enforced.
+1. Add runner polling that can read approved queued commands without executing them.
+2. Add command claiming and lease semantics so one runner owns one command at a time.
+3. Define an allowlist for command types and per-command payload schemas.
+4. Add result capture and command audit events.
+5. Only then enable low-risk local execution behind explicit owner approval.

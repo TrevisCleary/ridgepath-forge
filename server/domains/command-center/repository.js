@@ -9,9 +9,12 @@ const PROPOSALS_FILE = path.join(DATA_DIR, "proposals.json");
 const APPROVAL_EVENTS_FILE = path.join(DATA_DIR, "approval-events.json");
 const FINDINGS_FILE = path.join(DATA_DIR, "findings.json");
 const LOCAL_RUNNERS_FILE = path.join(DATA_DIR, "local-runners.json");
+const COMMAND_REQUESTS_FILE = path.join(DATA_DIR, "command-requests.json");
 let commandCenterSql = null;
 let schemaReady = false;
 const RUNNER_STALE_MS = 2 * 60 * 1000;
+const COMMAND_APPROVAL_STATUSES = new Set(["pending", "approved", "rejected", "cancelled"]);
+const COMMAND_EXECUTION_STATUSES = new Set(["blocked", "queued", "claimed", "running", "succeeded", "failed", "cancelled"]);
 
 function databaseUrl() {
   return process.env.COMMAND_CENTER_DATABASE_URL || process.env.DATABASE_URL || "";
@@ -111,6 +114,33 @@ function agentRunFromRow(row) {
   };
 }
 
+function commandRequestFromRow(row) {
+  return normalizeCommandRequest({
+    id: row.id,
+    runnerId: row.runner_id,
+    machineId: row.machine_id,
+    projectId: row.project_id || "",
+    proposalId: row.proposal_id || "",
+    commandType: row.command_type,
+    target: row.target,
+    reason: row.reason,
+    requestedBy: row.requested_by,
+    approvalStatus: row.approval_status,
+    executionStatus: row.execution_status,
+    idempotencyKey: row.idempotency_key || "",
+    payload: parseJson(row.payload, {}),
+    result: parseJson(row.result, {}),
+    error: row.error || "",
+    approvedBy: row.approved_by || "",
+    approvedAt: row.approved_at || "",
+    claimedByRunnerId: row.claimed_by_runner_id || "",
+    claimedAt: row.claimed_at || "",
+    finishedAt: row.finished_at || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  });
+}
+
 function localRunnerFromRow(row) {
   return normalizeRunner({
     id: row.id,
@@ -128,6 +158,40 @@ function localRunnerFromRow(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   });
+}
+
+function normalizeCommandRequest(input = {}) {
+  const timestamp = input.createdAt || input.updatedAt || nowIso();
+  const approvalStatus = COMMAND_APPROVAL_STATUSES.has(input.approvalStatus) ? input.approvalStatus : "pending";
+  const executionStatus = COMMAND_EXECUTION_STATUSES.has(input.executionStatus)
+    ? input.executionStatus
+    : approvalStatus === "approved"
+      ? "queued"
+      : "blocked";
+  return {
+    id: input.id || idFor("command"),
+    runnerId: input.runnerId || "",
+    machineId: input.machineId || "",
+    projectId: input.projectId || "",
+    proposalId: input.proposalId || "",
+    commandType: input.commandType || "project-review",
+    target: input.target || "",
+    reason: input.reason || "",
+    requestedBy: input.requestedBy || "owner",
+    approvalStatus,
+    executionStatus,
+    idempotencyKey: input.idempotencyKey || "",
+    payload: normalizeObject(input.payload),
+    result: normalizeObject(input.result),
+    error: input.error || "",
+    approvedBy: input.approvedBy || "",
+    approvedAt: input.approvedAt || "",
+    claimedByRunnerId: input.claimedByRunnerId || "",
+    claimedAt: input.claimedAt || "",
+    finishedAt: input.finishedAt || "",
+    createdAt: input.createdAt || timestamp,
+    updatedAt: input.updatedAt || timestamp,
+  };
 }
 
 function normalizeRunner(input = {}) {
@@ -232,6 +296,32 @@ async function ensureSchema(sql) {
       metadata jsonb not null default '{}'::jsonb,
       status text not null default 'online',
       last_seen_at timestamptz not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )
+  `;
+  await sql`
+    create table if not exists command_requests (
+      id text primary key,
+      runner_id text,
+      machine_id text,
+      project_id text,
+      proposal_id text references proposals(id) on delete set null,
+      command_type text not null,
+      target text not null default '',
+      reason text not null default '',
+      requested_by text not null default 'owner',
+      approval_status text not null default 'pending',
+      execution_status text not null default 'blocked',
+      idempotency_key text not null default '',
+      payload jsonb not null default '{}'::jsonb,
+      result jsonb not null default '{}'::jsonb,
+      error text not null default '',
+      approved_by text,
+      approved_at timestamptz,
+      claimed_by_runner_id text,
+      claimed_at timestamptz,
+      finished_at timestamptz,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     )
@@ -341,6 +431,133 @@ export async function listLocalRunners() {
 export async function activeLocalRunners() {
   const runners = await listLocalRunners();
   return runners.filter((runner) => runner.paired);
+}
+
+export async function listCommandRequests(filters = {}) {
+  const normalizedFilters = normalizeObject(filters);
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    const runnerId = normalizedFilters.runnerId || "";
+    const rows = runnerId
+      ? await sql`
+          select *
+          from command_requests
+          where runner_id = ${runnerId} or claimed_by_runner_id = ${runnerId}
+          order by updated_at desc
+          limit 100
+        `
+      : await sql`
+          select *
+          from command_requests
+          order by updated_at desc
+          limit 200
+        `;
+    return rows.map(commandRequestFromRow);
+  }
+
+  const commands = normalizeArray(await readJson(COMMAND_REQUESTS_FILE, []));
+  return commands
+    .map(normalizeCommandRequest)
+    .filter((command) => !normalizedFilters.runnerId || command.runnerId === normalizedFilters.runnerId || command.claimedByRunnerId === normalizedFilters.runnerId)
+    .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")))
+    .slice(0, normalizedFilters.runnerId ? 100 : 200);
+}
+
+export async function createCommandRequest(input = {}) {
+  const timestamp = nowIso();
+  const command = normalizeCommandRequest({
+    ...input,
+    approvalStatus: input.approvalStatus || "pending",
+    executionStatus: input.executionStatus || "blocked",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+
+  if (!command.commandType.trim()) throw new Error("Command type is required.");
+  if (!command.reason.trim()) throw new Error("Reason is required before a command can enter the approval queue.");
+
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    await sql`
+      insert into command_requests (
+        id, runner_id, machine_id, project_id, proposal_id, command_type, target, reason, requested_by,
+        approval_status, execution_status, idempotency_key, payload, result, error, approved_by, approved_at,
+        claimed_by_runner_id, claimed_at, finished_at, created_at, updated_at
+      )
+      values (
+        ${command.id}, ${command.runnerId || null}, ${command.machineId || null}, ${command.projectId || null}, ${command.proposalId || null},
+        ${command.commandType}, ${command.target}, ${command.reason}, ${command.requestedBy}, ${command.approvalStatus}, ${command.executionStatus},
+        ${command.idempotencyKey}, ${serializeJson(command.payload)}::jsonb, ${serializeJson(command.result)}::jsonb, ${command.error},
+        ${command.approvedBy || null}, ${command.approvedAt || null}, ${command.claimedByRunnerId || null}, ${command.claimedAt || null},
+        ${command.finishedAt || null}, ${command.createdAt}, ${command.updatedAt}
+      )
+    `;
+    return command;
+  }
+
+  const commands = normalizeArray(await readJson(COMMAND_REQUESTS_FILE, []));
+  commands.unshift(command);
+  await writeJson(COMMAND_REQUESTS_FILE, commands.slice(0, 500));
+  return command;
+}
+
+export async function updateCommandRequest(commandId, patch = {}) {
+  const timestamp = nowIso();
+  const normalizedPatch = normalizeObject(patch);
+  if (normalizedPatch.approvalStatus && !COMMAND_APPROVAL_STATUSES.has(normalizedPatch.approvalStatus)) {
+    throw new Error(`Unsupported command approval status: ${normalizedPatch.approvalStatus}`);
+  }
+  if (normalizedPatch.executionStatus && !COMMAND_EXECUTION_STATUSES.has(normalizedPatch.executionStatus)) {
+    throw new Error(`Unsupported command execution status: ${normalizedPatch.executionStatus}`);
+  }
+
+  const applyPatch = (current) => {
+    const approvalStatus = normalizedPatch.approvalStatus || current.approvalStatus;
+    const executionStatus = normalizedPatch.executionStatus || (
+      approvalStatus === "approved" && current.executionStatus === "blocked" ? "queued" : current.executionStatus
+    );
+    return normalizeCommandRequest({
+      ...current,
+      approvalStatus,
+      executionStatus,
+      result: normalizedPatch.result ? normalizeObject(normalizedPatch.result) : current.result,
+      error: normalizedPatch.error ?? current.error,
+      approvedBy: approvalStatus === "approved" ? normalizedPatch.approvedBy || current.approvedBy || "owner" : current.approvedBy,
+      approvedAt: approvalStatus === "approved" ? current.approvedAt || timestamp : current.approvedAt,
+      finishedAt: ["succeeded", "failed", "cancelled"].includes(executionStatus) ? current.finishedAt || timestamp : current.finishedAt,
+      updatedAt: timestamp,
+    });
+  };
+
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    const existing = await sql`select * from command_requests where id = ${commandId} limit 1`;
+    if (!existing.length) throw new Error("Command request not found.");
+    const next = applyPatch(commandRequestFromRow(existing[0]));
+    await sql`
+      update command_requests
+      set approval_status = ${next.approvalStatus},
+          execution_status = ${next.executionStatus},
+          result = ${serializeJson(next.result)}::jsonb,
+          error = ${next.error},
+          approved_by = ${next.approvedBy || null},
+          approved_at = ${next.approvedAt || null},
+          finished_at = ${next.finishedAt || null},
+          updated_at = ${next.updatedAt}
+      where id = ${commandId}
+    `;
+    return next;
+  }
+
+  const commands = normalizeArray(await readJson(COMMAND_REQUESTS_FILE, []));
+  const index = commands.findIndex((command) => command.id === commandId);
+  if (index < 0) throw new Error("Command request not found.");
+  commands[index] = applyPatch(normalizeCommandRequest(commands[index]));
+  await writeJson(COMMAND_REQUESTS_FILE, commands);
+  return commands[index];
 }
 
 export async function upsertLocalRunner(input = {}) {
