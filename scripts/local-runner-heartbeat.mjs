@@ -48,6 +48,8 @@ async function sendHeartbeat() {
       "project-inventory",
       "fabric-inventory",
       "project-review",
+      "command-queue-read",
+      "approved-command-execution",
       "local-actions-require-approval",
     ],
     metadata: {
