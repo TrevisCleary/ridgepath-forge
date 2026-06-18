@@ -301,6 +301,10 @@ function App() {
   const demoPortalProject = projects.find((project) => project.id === demoPortalProjectId);
   const runningCount = projects.filter((project) => project.status === "running").length;
   const serviceCount = projects.reduce((count, project) => count + project.services.length, 0);
+  const commandCenterLoaded = Boolean(commandCenterStatus);
+  const hostedMode = Boolean(commandCenterStatus?.hosted);
+  const localRunnerPaired = Boolean(commandCenterStatus?.localRunnerPaired);
+  const localControlsEnabled = commandCenterLoaded && (!hostedMode || localRunnerPaired);
   const activeMachine = ridgeFabric?.editSession?.currentHost || ridgeFabric?.editSession?.active?.host || "Local";
   const navigationItems = [
     { key: "overview", label: "Overview", icon: <Home size={18} /> },
@@ -338,8 +342,8 @@ function App() {
         </nav>
         <div className="agent-card">
           <small>Active Machine</small>
-          <strong>{activeMachine}</strong>
-          <span>{runningCount} running · {serviceCount} services</span>
+          <strong>{hostedMode && !localRunnerPaired ? "Hosted Ops" : activeMachine}</strong>
+          <span>{hostedMode ? (localRunnerPaired ? "Local runner paired" : "Local runner not paired") : `${runningCount} running · ${serviceCount} services`}</span>
         </div>
       </aside>
       <section className="command-main">
@@ -352,7 +356,7 @@ function App() {
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects" />
           </div>
           <div className="command-actions">
-            <button className="secondary-action" type="button" onClick={() => setShowPortTree(true)}>
+            <button className="secondary-action" type="button" onClick={() => setShowPortTree(true)} disabled={!localControlsEnabled}>
               <Network size={16} />
               Ports
             </button>
@@ -360,12 +364,22 @@ function App() {
               <RefreshCw size={16} />
               Refresh
             </button>
-            <button className="secondary-action primary-secondary" type="button" onClick={() => setShowRegister(true)}>
+            <button className="secondary-action primary-secondary" type="button" onClick={() => setShowRegister(true)} disabled={!localControlsEnabled}>
               <Plus size={16} />
               Add Project
             </button>
           </div>
         </header>
+      {hostedMode ? (
+        <div className={`hosted-mode-banner ${localRunnerPaired ? "paired" : "unpaired"}`} role="status">
+          <AlertTriangle size={16} />
+          <span>
+            {localRunnerPaired
+              ? "Hosted Ops is online and a local runner is paired. Local controls use the paired runner capability contract."
+              : "Hosted Ops is online. Local runner not paired. Local project, Fabric path, and machine-control actions are disabled."}
+          </span>
+        </div>
+      ) : null}
       {actionError ? (
         <div className="action-error" role="alert">
           <AlertTriangle size={16} />
@@ -392,6 +406,8 @@ function App() {
           operationsLibrary={operationsLibrary}
           ridgeFabric={ridgeFabric}
           root={root}
+          hostedMode={hostedMode}
+          localRunnerPaired={localRunnerPaired}
           onOpenProjects={() => openView("projects")}
           onOpenFabric={() => openView("fabric")}
           onOpenPorts={() => setShowPortTree(true)}
@@ -403,6 +419,7 @@ function App() {
           projects={projects}
           storageStatus={commandCenterStatus}
           busy={busy}
+          localRunnerPaired={localControlsEnabled}
           onUpdateProposal={updateCommandProposal}
           onRunProjectReview={runProjectReview}
         />
@@ -416,6 +433,7 @@ function App() {
         <RidgeFabricWorkspace
           registry={ridgeFabric}
           busy={busy}
+          localControlsEnabled={localControlsEnabled}
           onRefresh={loadRidgeFabricRegistry}
           onSaveDevice={saveRidgeFabricDevice}
           onDeleteDevice={deleteRidgeFabricDevice}
@@ -426,6 +444,7 @@ function App() {
         <ProjectDetail
           project={selected}
           busy={busy}
+          localControlsEnabled={localControlsEnabled}
           onBack={() => setSelectedId("")}
           onStart={() => runAction(selected.id, "start")}
           onStop={() => runAction(selected.id, "stop")}
@@ -455,6 +474,7 @@ function App() {
           onStopProject={(projectId) => runAction(projectId, "stop")}
           onRestartProject={(projectId) => runAction(projectId, "restart")}
           onTakeOverProject={(projectId) => runAction(projectId, "take-over")}
+          localControlsEnabled={localControlsEnabled}
         />
       ) : activeView === "runtime" ? (
         <CommandPlaceholder
@@ -465,6 +485,8 @@ function App() {
             ["Running projects", runningCount],
             ["Discovered services", serviceCount],
             ["Execution layer", "Local Forge API"],
+            ["Hosted mode", hostedMode ? "Enabled" : "Disabled"],
+            ["Local runner", localRunnerPaired ? "Paired" : "Not paired"],
           ]}
         />
       ) : activeView === "automation" ? (
@@ -510,7 +532,8 @@ function App() {
           rows={[
             ["Project root", root || "Not loaded"],
             ["Registry root", "C:\\Development\\Shared\\ridge-fabric-registry"],
-            ["Mode", "Local command center"],
+            ["Mode", hostedMode ? "Hosted Ops" : "Local command center"],
+            ["Local runner", localRunnerPaired ? "Paired" : "Not paired"],
           ]}
         />
       ) : null}

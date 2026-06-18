@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { getProjectRuntimeState } from "./runtime.js";
 
-export function ProjectDetail({ project, busy, onBack, onStart, onStop, onRestart, onTakeOver, onGitSync, onInitializeProjectManagement, onCreatePortfolioDraft, onLinkDemoPortal, onSaveDescription, onOpenFolder, onOpenProjectManagementFolder }) {
+export function ProjectDetail({ project, busy, localControlsEnabled = true, onBack, onStart, onStop, onRestart, onTakeOver, onGitSync, onInitializeProjectManagement, onCreatePortfolioDraft, onLinkDemoPortal, onSaveDescription, onOpenFolder, onOpenProjectManagementFolder }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(project.description);
   const [activeMenu, setActiveMenu] = useState("overview");
@@ -92,23 +92,23 @@ export function ProjectDetail({ project, busy, onBack, onStart, onStop, onRestar
                 Open
               </a>
             ) : null}
-            <button className="start" disabled={!canStart} onClick={onStart}>
+            <button className="start" disabled={!localControlsEnabled || !canStart} onClick={onStart}>
               <Play size={16} />
               Start
             </button>
             {canTakeOver ? (
-              <button className="take-over" onClick={onTakeOver}>
+              <button className="take-over" disabled={!localControlsEnabled} onClick={onTakeOver}>
                 <RotateCw size={16} />
                 Take Over
               </button>
             ) : null}
             {hasManagedRunning ? (
               <>
-                <button className="restart" disabled={!canUseManagedActions} onClick={onRestart}>
+                <button className="restart" disabled={!localControlsEnabled || !canUseManagedActions} onClick={onRestart}>
                   <RotateCw size={16} />
                   Restart
                 </button>
-                <button className="stop" disabled={!canUseManagedActions} onClick={onStop}>
+                <button className="stop" disabled={!localControlsEnabled || !canUseManagedActions} onClick={onStop}>
                   <Square size={15} />
                   Stop
                 </button>
@@ -133,6 +133,7 @@ export function ProjectDetail({ project, busy, onBack, onStart, onStop, onRestar
               onGitSync={onGitSync}
               onCreatePortfolioDraft={onCreatePortfolioDraft}
               onLinkDemoPortal={onLinkDemoPortal}
+              localControlsEnabled={localControlsEnabled}
               isBusy={isBusy}
               isCreatingPortfolioDraft={busy === `${project.id}:create-portfolio-draft`}
               isLinkingDemoPortal={busy === `${project.id}:link-demo-portal`}
@@ -144,6 +145,7 @@ export function ProjectDetail({ project, busy, onBack, onStart, onStop, onRestar
               projectManagement={projectManagement}
               onOpen={onOpenProjectManagementFolder}
               onInitialize={onInitializeProjectManagement}
+              localControlsEnabled={localControlsEnabled}
               isInitializing={busy === `${project.id}:initialize-project-management`}
             />
           ) : null}
@@ -156,7 +158,7 @@ export function ProjectDetail({ project, busy, onBack, onStart, onStop, onRestar
   );
 }
 
-function ProjectOverview({ project, editing, draft, onDraftChange, onEdit, onCancelEdit, onSaveDescription, onOpenFolder, onGitSync, onCreatePortfolioDraft, onLinkDemoPortal, isBusy, isCreatingPortfolioDraft, isLinkingDemoPortal }) {
+function ProjectOverview({ project, editing, draft, onDraftChange, onEdit, onCancelEdit, onSaveDescription, onOpenFolder, onGitSync, onCreatePortfolioDraft, onLinkDemoPortal, localControlsEnabled, isBusy, isCreatingPortfolioDraft, isLinkingDemoPortal }) {
   const primaryServices = project.services.filter((service) => service.kind === "primary");
   const apiServices = project.services.filter((service) => service.kind === "api");
   const liveUrl = project.liveUrl || project.externalUrl || project.homepage || "";
@@ -205,7 +207,7 @@ function ProjectOverview({ project, editing, draft, onDraftChange, onEdit, onCan
                 <small>{project.path}</small>
               </span>
             </div>
-            <button className="secondary-action" onClick={onOpenFolder}>
+            <button className="secondary-action" disabled={!localControlsEnabled} onClick={onOpenFolder} title={localControlsEnabled ? "Open local directory" : "Requires a paired local runner"}>
               Open Directory
             </button>
           </div>
@@ -222,7 +224,7 @@ function ProjectOverview({ project, editing, draft, onDraftChange, onEdit, onCan
               {project.git ? <span className={project.git.dirty ? "warn" : ""}>{project.git.dirty ? "Dirty" : "Clean"}</span> : null}
               {project.git?.lastSync ? <span>Synced {formatTime(project.git.lastSync)}</span> : null}
             </div>
-            <button className="secondary-action" disabled={isBusy || !project.origin} onClick={onGitSync}>
+            <button className="secondary-action" disabled={!localControlsEnabled || isBusy || !project.origin} onClick={onGitSync} title={localControlsEnabled ? "Synchronize local repository" : "Requires a paired local runner"}>
               Git Sync
             </button>
           </div>
@@ -269,7 +271,7 @@ function ProjectOverview({ project, editing, draft, onDraftChange, onEdit, onCan
                 <small>Create or update a local project idea and blog draft. Drafts are hidden from production until reviewed.</small>
               </span>
             </div>
-            <button className="secondary-action primary-secondary" disabled={isBusy || isCreatingPortfolioDraft} onClick={onCreatePortfolioDraft}>
+            <button className="secondary-action primary-secondary" disabled={!localControlsEnabled || isBusy || isCreatingPortfolioDraft} onClick={onCreatePortfolioDraft}>
               {isCreatingPortfolioDraft ? "Creating..." : "Add to Portfolio"}
             </button>
           </div>
@@ -416,7 +418,7 @@ function ProjectManagementStatusStrip({ projectManagement }) {
 
 const PROJECT_MANAGEMENT_TABS = ["Overview", "Backlog", "Bugs", "Governance", "Codex Activity"];
 
-function ProjectManagementDashboard({ project, projectManagement, onOpen, onInitialize, isInitializing }) {
+function ProjectManagementDashboard({ project, projectManagement, onOpen, onInitialize, localControlsEnabled, isInitializing }) {
   const [activeTab, setActiveTab] = useState("Overview");
   const [backlogFilters, setBacklogFilters] = useState({ status: "all", priority: "all", type: "all" });
   const [copiedPrompt, setCopiedPrompt] = useState(false);
@@ -472,7 +474,7 @@ function ProjectManagementDashboard({ project, projectManagement, onOpen, onInit
           <strong>Project Management Not Initialized</strong>
           <span>Recommended Next Action: {projectManagement.recommendedNextAction || "Needs Manual Review"}</span>
           <div className="pm-empty-actions">
-            <button className="secondary-action primary-secondary" type="button" disabled={isInitializing} onClick={onInitialize}>
+            <button className="secondary-action primary-secondary" type="button" disabled={!localControlsEnabled || isInitializing} onClick={onInitialize} title={localControlsEnabled ? "Initialize local project-management files" : "Requires a paired local runner"}>
               <ClipboardList size={15} />
               {isInitializing ? "Initializing..." : "Initialize Project Management"}
             </button>
@@ -503,7 +505,7 @@ function ProjectManagementDashboard({ project, projectManagement, onOpen, onInit
           {activeTab === "Codex Activity" ? <ProjectManagementCodexActivity dashboard={dashboard} /> : null}
         </>
       )}
-      <ProjectManagementFileActions projectManagement={projectManagement} canOpenFolder={canOpenFolder} onOpen={onOpen} />
+            <ProjectManagementFileActions projectManagement={projectManagement} canOpenFolder={localControlsEnabled && canOpenFolder} onOpen={onOpen} />
     </section>
   );
 }

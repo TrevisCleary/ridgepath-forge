@@ -24,6 +24,7 @@ export function ProjectTable({
   onStopProject,
   onRestartProject,
   onTakeOverProject,
+  localControlsEnabled = true,
 }) {
   return (
     <section className="project-directory" aria-labelledby="project-directory-title">
@@ -90,6 +91,7 @@ export function ProjectTable({
                         onStopProject={onStopProject}
                         onRestartProject={onRestartProject}
                         onTakeOverProject={onTakeOverProject}
+                        localControlsEnabled={localControlsEnabled}
                       />
                     </td>
                   </tr>
@@ -107,12 +109,14 @@ export function ProjectTable({
   );
 }
 
-function ProjectTableActions({ project, runtime, onStartProject, onStopProject, onRestartProject, onTakeOverProject }) {
+function ProjectTableActions({ project, runtime, onStartProject, onStopProject, onRestartProject, onTakeOverProject, localControlsEnabled }) {
   const stopEvent = (event) => event.stopPropagation();
   const runTableAction = (event, callback) => {
     event.stopPropagation();
+    if (!localControlsEnabled) return;
     callback(project.id);
   };
+  const localTitle = localControlsEnabled ? "" : "Requires a paired local runner";
 
   return (
     <div className="table-actions" onClick={stopEvent}>
@@ -132,16 +136,16 @@ function ProjectTableActions({ project, runtime, onStartProject, onStopProject, 
           <Rocket size={15} />
         </button>
       )}
-      <button className="table-action table-action-start" type="button" disabled={!runtime.canStart} onClick={(event) => runTableAction(event, onStartProject)} title="Start" aria-label={`Start ${project.name}`}>
+      <button className="table-action table-action-start" type="button" disabled={!localControlsEnabled || !runtime.canStart} onClick={(event) => runTableAction(event, onStartProject)} title={localTitle || "Start"} aria-label={`Start ${project.name}`}>
         <Play size={15} />
       </button>
-      <button className="table-action table-action-restart" type="button" disabled={!runtime.canUseManagedActions} onClick={(event) => runTableAction(event, onRestartProject)} title="Restart" aria-label={`Restart ${project.name}`}>
+      <button className="table-action table-action-restart" type="button" disabled={!localControlsEnabled || !runtime.canUseManagedActions} onClick={(event) => runTableAction(event, onRestartProject)} title={localTitle || "Restart"} aria-label={`Restart ${project.name}`}>
         <RotateCw size={15} />
       </button>
-      <button className="table-action table-action-stop" type="button" disabled={!runtime.canUseManagedActions} onClick={(event) => runTableAction(event, onStopProject)} title="Stop" aria-label={`Stop ${project.name}`}>
+      <button className="table-action table-action-stop" type="button" disabled={!localControlsEnabled || !runtime.canUseManagedActions} onClick={(event) => runTableAction(event, onStopProject)} title={localTitle || "Stop"} aria-label={`Stop ${project.name}`}>
         <Square size={14} />
       </button>
-      <button className="table-action table-action-take-over" type="button" disabled={!runtime.canTakeOver} onClick={(event) => runTableAction(event, onTakeOverProject)} title="Take over" aria-label={`Take over ${project.name}`}>
+      <button className="table-action table-action-take-over" type="button" disabled={!localControlsEnabled || !runtime.canTakeOver} onClick={(event) => runTableAction(event, onTakeOverProject)} title={localTitle || "Take over"} aria-label={`Take over ${project.name}`}>
         <BadgeCheck size={15} />
       </button>
     </div>

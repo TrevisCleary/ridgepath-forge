@@ -13,6 +13,7 @@ export function ApprovalQueue({
   projects,
   storageStatus,
   busy,
+  localRunnerPaired,
   onUpdateProposal,
   onRunProjectReview,
 }) {
@@ -39,12 +40,15 @@ export function ApprovalQueue({
           <select value={selectedProjectId} onChange={(event) => setSelectedProjectId(event.target.value)}>
             {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
           </select>
-          <button className="secondary-action primary-secondary" type="button" disabled={!selectedProjectId || busy === "project-review"} onClick={() => onRunProjectReview(selectedProjectId)}>
+          <button className="secondary-action primary-secondary" type="button" disabled={!localRunnerPaired || !selectedProjectId || busy === "project-review"} onClick={() => onRunProjectReview(selectedProjectId)} title={localRunnerPaired ? "Run local read-only review" : "Requires a paired local runner"}>
             <Play size={15} />
             {busy === "project-review" ? "Reviewing..." : "Run Read-only Review"}
           </button>
         </div>
       </div>
+      {!localRunnerPaired ? (
+        <div className="hosted-inline-note">Read-only project scans require a paired local runner. Proposal feedback and approval actions remain available.</div>
+      ) : null}
 
       <div className="approval-toolbar">
         {["open", "approved", "rejected", "deferred", "needs-evidence", "all"].map((status) => (

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Check, Copy, ExternalLink, FileText, FolderOpen, RefreshCw, X } from "lucide-react";
 
-export function RidgeFabricWorkspace({ registry, busy, onRefresh, onSaveDevice, onDeleteDevice, onOpenPath, onBack }) {
+export function RidgeFabricWorkspace({ registry, busy, localControlsEnabled = true, onRefresh, onSaveDevice, onDeleteDevice, onOpenPath, onBack }) {
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [draft, setDraft] = useState(null);
   const [query, setQuery] = useState("");
@@ -9,7 +9,7 @@ export function RidgeFabricWorkspace({ registry, busy, onRefresh, onSaveDevice, 
   const [deviceModalOpen, setDeviceModalOpen] = useState(false);
   const devices = registry?.devices || [];
   const editSession = registry?.editSession || {};
-  const readOnly = Boolean(editSession.readOnly);
+  const readOnly = Boolean(editSession.readOnly) || !localControlsEnabled;
   const conflicts = registry?.conflicts || [];
   const selectedDevice = devices.find((device) => device.stableIdentifier === selectedDeviceId) || null;
   const activeDraft = draft || selectedDevice;
@@ -75,7 +75,7 @@ export function RidgeFabricWorkspace({ registry, busy, onRefresh, onSaveDevice, 
             <X size={15} />
             Projects
           </button>
-          <button className="fabric-action-button" type="button" onClick={() => onOpenPath("")} title="Open the Ridge Fabric registry folder">
+          <button className="fabric-action-button" type="button" onClick={() => onOpenPath("")} disabled={!localControlsEnabled} title={localControlsEnabled ? "Open the Ridge Fabric registry folder" : "Requires a paired local runner"}>
             <FolderOpen size={15} />
             Open Registry
           </button>
@@ -101,7 +101,9 @@ export function RidgeFabricWorkspace({ registry, busy, onRefresh, onSaveDevice, 
             <div className="pm-warning">
               <AlertTriangle size={16} />
               <span>
-                {conflicts.length
+                {!localControlsEnabled
+                  ? "Hosted Ops is read-only for Fabric until a local runner is paired."
+                  : conflicts.length
                   ? `${conflicts.length} Syncthing conflict file${conflicts.length === 1 ? "" : "s"} detected. Resolve conflicts before editing.`
                   : `Registry is locked by ${editSession.active?.host || "another host"}.`}
               </span>
@@ -112,7 +114,7 @@ export function RidgeFabricWorkspace({ registry, busy, onRefresh, onSaveDevice, 
             <section className="fabric-table-panel">
               <div className="fabric-toolbar">
                 <input className="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search devices" />
-                <button className="secondary-action" type="button" onClick={() => onOpenPath("devices.md")}>
+                <button className="secondary-action" type="button" onClick={() => onOpenPath("devices.md")} disabled={!localControlsEnabled} title={localControlsEnabled ? "Open generated devices summary" : "Requires a paired local runner"}>
                   <FileText size={15} />
                   Devices
                 </button>
@@ -181,7 +183,7 @@ export function RidgeFabricWorkspace({ registry, busy, onRefresh, onSaveDevice, 
           <section className="fabric-files">
             <h3>Registry Files</h3>
             {(registry.files || []).map((file) => (
-              <button className={`resource-row fabric-file-row ${file.exists ? "" : "missing"}`} key={file.relativePath} type="button" onClick={() => file.exists && onOpenPath(file.relativePath)} disabled={!file.exists}>
+              <button className={`resource-row fabric-file-row ${file.exists ? "" : "missing"}`} key={file.relativePath} type="button" onClick={() => file.exists && onOpenPath(file.relativePath)} disabled={!localControlsEnabled || !file.exists}>
                 <span className="resource-meta">
                   <FileText size={16} />
                   <span>

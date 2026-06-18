@@ -16,6 +16,8 @@ export function CommandCenterOverview({
   operationsLibrary,
   ridgeFabric,
   root,
+  hostedMode,
+  localRunnerPaired,
   onOpenProjects,
   onOpenFabric,
   onOpenPorts,
@@ -125,6 +127,19 @@ export function CommandCenterOverview({
             <StatusLine label="Demo URL gaps" value={demoGaps.length} tone={demoGaps.length ? "warning" : ""} />
             <StatusLine label="Fabric unknown devices" value={fabricUnknown} tone={fabricUnknown ? "warning" : ""} />
             <StatusLine label="Operations library" value={operationsStatus} />
+          </div>
+        </section>
+
+        <section className="overview-panel">
+          <div className="section-title compact">
+            <Server size={17} />
+            <h3>Runner</h3>
+          </div>
+          <div className="runtime-summary">
+            <StatusLine label="Hosted Ops" value={hostedMode ? "Online" : "Local"} />
+            <StatusLine label="Local runner" value={localRunnerPaired ? "Paired" : "Not paired"} tone={hostedMode && !localRunnerPaired ? "warning" : ""} />
+            <StatusLine label="Local controls" value={hostedMode && !localRunnerPaired ? "Disabled" : "Enabled"} tone={hostedMode && !localRunnerPaired ? "warning" : ""} />
+            <StatusLine label="Command queue" value="Neon" />
           </div>
         </section>
       </div>
