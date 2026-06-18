@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     allowedHosts: ["dev-launcher", "devlauncher"],
     proxy: {
-      "/api": "http://localhost:3059",
+      "/api": "http://127.0.0.1:3059",
     },
   },
 });

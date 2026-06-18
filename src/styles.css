@@ -945,7 +945,7 @@ h3 {
   background: var(--color-background-primary);
   box-shadow: 0 14px 34px rgba(7, 31, 62, 0.08);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .directory-toolbar {
@@ -956,6 +956,19 @@ h3 {
   padding: 14px;
   border-bottom: 1px solid var(--color-border-tertiary);
   background: linear-gradient(180deg, #ffffff 0%, #f7fbfc 100%);
+}
+
+.directory-controls {
+  width: min(820px, 100%);
+  display: grid;
+  gap: 8px;
+}
+
+.directory-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .directory-meta {
@@ -979,11 +992,41 @@ h3 {
 }
 
 .directory-filters {
-  width: min(760px, 100%);
   display: grid;
   grid-template-columns: minmax(220px, 1fr) 112px 126px 112px;
   gap: 8px;
   align-items: center;
+}
+
+.project-catalog-diagnostic {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--color-border-tertiary);
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  padding: 8px 14px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.project-catalog-diagnostic.warning {
+  background: var(--color-background-warning);
+  color: var(--color-text-warning);
+}
+
+.project-catalog-diagnostic span,
+.project-catalog-diagnostic strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.project-catalog-diagnostic strong {
+  flex: 0 0 auto;
+  color: var(--color-text-primary);
+  text-transform: capitalize;
 }
 
 .project-table-wrap {
@@ -1042,6 +1085,13 @@ h3 {
 .project-empty-state span {
   max-width: 580px;
   line-height: 1.45;
+}
+
+.project-empty-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .table-actions {

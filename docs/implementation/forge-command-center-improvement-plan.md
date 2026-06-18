@@ -597,3 +597,23 @@ This gives an immediate command-center feel without destabilizing start/stop/run
 - Verified the Neon project catalog still contains 16 records and the synced `observedAt` timestamp updated to `2026-06-18T21:21:22.708Z`.
 - Browser-verified local Runtime on `http://127.0.0.1:3060`: the completed Project catalog sync appears above the prior Operations Library sync with result and audit trail visible.
 - Remaining next step: perform the same owner-approved sync from the hosted `ops.ridgepath.io` Runtime UI in an authenticated browser session.
+
+### Projects Self-Recovery Sync Pass
+
+- Added hosted project catalog status tracking in the main Forge app state so the Projects page can show the API-reported Neon catalog message instead of only a generic empty state.
+- Added a Projects-page `Sync Projects` action that creates an owner-approved read-only `project-catalog-sync` command for the paired local runner.
+- Kept generic Runtime commands approval-gated; only the explicit Projects-page catalog recovery action is queued as already approved because the owner is pressing that dedicated read-only sync control.
+- Added latest project-sync command status to the Project Directory metadata and diagnostic strip.
+- Added a Project Directory diagnostic strip that distinguishes hidden synced projects from a genuinely empty hosted catalog.
+- Added empty-state actions for `Sync Projects` and `Reset Filters` so the owner can recover from either a stale Neon catalog or a filter/search mismatch directly from the Projects page.
+- Browser-verified local Projects view on `http://127.0.0.1:3060`: 16 synced rows render, an impossible search shows `0 shown` / `16 synced`, the diagnostic strip explains that all 16 projects are hidden by filters, and `Reset Filters` restores all rows.
+- Verified an owner-approved `project-catalog-sync` command created with the Projects-page payload is claimed by runner `411100-PCK39`.
+- Observed one transient runner failure while the local API watchdog restarted the API during `/api/projects`.
+- Added retry and route-specific error reporting to `scripts/local-runner-execute.mjs` for local API calls.
+- Re-ran the owner-approved sync command after hardening and verified it completed successfully with `projectCount: 16` and root `C:\Development\Projects`.
+- Observed a transient browser-side `502 Bad Gateway` while refreshing Projects during an API watchdog restart.
+- Added retry handling for idempotent frontend `GET` API calls on network failures and `502` / `503` / `504` responses, while leaving mutating requests non-retried to avoid duplicate commands or writes.
+- Hardened local project discovery by cleaning up port-check sockets deterministically and removing the extra `localhost` probe in favor of direct `127.0.0.1` and `::1` checks.
+- Pinned the Vite dev proxy to `127.0.0.1:3059` so local browser requests do not depend on Windows `localhost` address resolution.
+- Added an in-flight guard around frontend project loading so manual Refresh and polling cannot stack overlapping `/api/projects` discovery calls.
+- Remaining next step: deploy the updated production site and verify `ops.ridgepath.io` Projects once an authenticated browser session is available.

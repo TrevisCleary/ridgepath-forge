@@ -8,6 +8,8 @@ const WATCH = process.argv.includes("--watch");
 const DEFAULT_LOCAL_API = "http://127.0.0.1:3059";
 const DEFAULT_INTERVAL_SECONDS = 15;
 const MIN_INTERVAL_SECONDS = 10;
+const LOCAL_API_RETRY_COUNT = 3;
+const LOCAL_API_RETRY_DELAY_MS = 750;
 
 loadEnvFile(path.join(ROOT, ".env.local"));
 loadEnvFile(path.join(ROOT, ".env"));
@@ -72,19 +74,40 @@ function runnerIdentity() {
 }
 
 async function apiJson(route, options = {}) {
-  const response = await fetch(`${localApiBase()}${route}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!response.ok) {
-    throw new Error(data.error || `Local Forge API returned HTTP ${response.status} for ${route}.`);
+  const url = `${localApiBase()}${route}`;
+  let lastError = null;
+  for (let attempt = 1; attempt <= LOCAL_API_RETRY_COUNT; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(options.headers || {}),
+        },
+      });
+      const text = await response.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error(`Local Forge API returned non-JSON for ${route}: ${text.slice(0, 180)}`);
+      }
+      if (!response.ok) {
+        throw new Error(data.error || `Local Forge API returned HTTP ${response.status} for ${route}.`);
+      }
+      return data;
+    } catch (error) {
+      lastError = error;
+      if (attempt < LOCAL_API_RETRY_COUNT) {
+        await sleep(LOCAL_API_RETRY_DELAY_MS * attempt);
+      }
+    }
   }
-  return data;
+  throw new Error(`Local Forge API request failed for ${route} at ${url}: ${lastError?.message || "unknown error"}`);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function syncProjects(runner) {

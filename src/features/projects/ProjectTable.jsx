@@ -1,4 +1,4 @@
-import { BadgeCheck, Play, Rocket, RotateCw, Square } from "lucide-react";
+import { BadgeCheck, Play, PlayCircle, Rocket, RotateCw, Square } from "lucide-react";
 import { getProjectRuntimeState, portsLabel } from "./runtime.js";
 
 function Toggle({ label, checked, onChange }) {
@@ -20,10 +20,13 @@ export function ProjectTable({
   root = "",
   hostedMode = false,
   localRunnerPaired = false,
+  projectCatalogStatus = null,
+  latestProjectSyncCommand = null,
   query,
   filters,
   onQueryChange,
   onFiltersChange,
+  onSyncProjects,
   onOpenProject,
   onStartProject,
   onStopProject,
@@ -33,6 +36,10 @@ export function ProjectTable({
 }) {
   const latestObservedAt = latestProjectObservation(catalogProjects);
   const hasActiveFilters = Boolean(query.trim()) || !filters.work || !filters.ridgepath || !filters.personal;
+  const hiddenCount = Math.max(0, totalProjects - projects.length);
+  const syncStatus = latestProjectSyncCommand ? formatCommandStatus(latestProjectSyncCommand) : "";
+  const syncBusy = latestProjectSyncCommand && ["queued", "claimed", "running"].includes(latestProjectSyncCommand.executionStatus);
+  const canSyncProjects = hostedMode && localRunnerPaired && typeof onSyncProjects === "function";
   const resetFilters = () => {
     onQueryChange("");
     onFiltersChange({ work: true, ridgepath: true, personal: true });
@@ -49,20 +56,55 @@ export function ProjectTable({
             <span>{hostedMode ? "Neon catalog" : root || "Local catalog"}</span>
             <span>{hostedMode ? (localRunnerPaired ? "Runner paired" : "Runner not paired") : "Local controls"}</span>
             {latestObservedAt ? <span>Observed {formatObservedTime(latestObservedAt)}</span> : null}
+            {syncStatus ? <span>Last sync {syncStatus}</span> : null}
           </div>
         </div>
-        <div className="directory-filters">
-          <input
-            className="search"
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Search projects"
-          />
-          <Toggle label="Work" checked={filters.work} onChange={() => onFiltersChange((current) => ({ ...current, work: !current.work }))} />
-          <Toggle label="RidgePath" checked={filters.ridgepath} onChange={() => onFiltersChange((current) => ({ ...current, ridgepath: !current.ridgepath }))} />
-          <Toggle label="Personal" checked={filters.personal} onChange={() => onFiltersChange((current) => ({ ...current, personal: !current.personal }))} />
+        <div className="directory-controls">
+          <div className="directory-actions">
+            {hostedMode ? (
+              <button
+                className="secondary-action primary-secondary"
+                type="button"
+                disabled={!canSyncProjects || syncBusy}
+                onClick={onSyncProjects}
+                title={canSyncProjects ? "Queue an owner-approved read-only catalog sync" : "Requires a paired local runner"}
+              >
+                <PlayCircle size={15} />
+                {syncBusy ? "Sync Queued" : "Sync Projects"}
+              </button>
+            ) : null}
+            {hasActiveFilters ? (
+              <button className="secondary-action" type="button" onClick={resetFilters}>
+                <RotateCw size={15} />
+                Reset Filters
+              </button>
+            ) : null}
+          </div>
+          <div className="directory-filters">
+            <input
+              className="search"
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+              placeholder="Search projects"
+            />
+            <Toggle label="Work" checked={filters.work} onChange={() => onFiltersChange((current) => ({ ...current, work: !current.work }))} />
+            <Toggle label="RidgePath" checked={filters.ridgepath} onChange={() => onFiltersChange((current) => ({ ...current, ridgepath: !current.ridgepath }))} />
+            <Toggle label="Personal" checked={filters.personal} onChange={() => onFiltersChange((current) => ({ ...current, personal: !current.personal }))} />
+          </div>
         </div>
       </div>
+      {(hasActiveFilters || hostedMode) ? (
+        <div className={`project-catalog-diagnostic ${hiddenCount ? "warning" : ""}`}>
+          <span>
+            {hiddenCount
+              ? `${hiddenCount} synced project${hiddenCount === 1 ? "" : "s"} hidden by the current search or audience filters.`
+              : projectCatalogStatus?.message || (hostedMode ? "Hosted Ops is reading the shared Neon project catalog." : "Local catalog loaded.")}
+          </span>
+          {latestProjectSyncCommand ? (
+            <strong>{labelForCommand(latestProjectSyncCommand.commandType)}: {formatCommandStatus(latestProjectSyncCommand)}</strong>
+          ) : null}
+        </div>
+      ) : null}
       <div className="project-table-wrap">
         <table className="project-table">
           <thead>
@@ -128,12 +170,26 @@ export function ProjectTable({
                           ? "Run the local project sync from a paired Forge runner to populate the hosted catalog."
                           : "Check the configured project root and refresh discovery."}
                     </span>
-                    {hasActiveFilters ? (
-                      <button className="secondary-action" type="button" onClick={resetFilters}>
-                        <RotateCw size={15} />
-                        Reset Filters
-                      </button>
-                    ) : null}
+                    <div className="project-empty-actions">
+                      {hostedMode ? (
+                        <button
+                          className="secondary-action primary-secondary"
+                          type="button"
+                          disabled={!canSyncProjects || syncBusy}
+                          onClick={onSyncProjects}
+                          title={canSyncProjects ? "Queue an owner-approved read-only catalog sync" : "Requires a paired local runner"}
+                        >
+                          <PlayCircle size={15} />
+                          {syncBusy ? "Sync Queued" : "Sync Projects"}
+                        </button>
+                      ) : null}
+                      {hasActiveFilters ? (
+                        <button className="secondary-action" type="button" onClick={resetFilters}>
+                          <RotateCw size={15} />
+                          Reset Filters
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 </td>
               </tr>
@@ -157,6 +213,19 @@ function formatObservedTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function labelForCommand(value) {
+  return String(value || "").replaceAll("-", " ");
+}
+
+function formatCommandStatus(command) {
+  if (!command) return "";
+  const execution = labelForCommand(command.executionStatus || "");
+  const approval = labelForCommand(command.approvalStatus || "");
+  if (command.executionStatus === "succeeded") return `succeeded ${formatObservedTime(command.finishedAt || command.updatedAt || command.createdAt)}`;
+  if (command.executionStatus === "failed") return `failed ${formatObservedTime(command.finishedAt || command.updatedAt || command.createdAt)}`;
+  return `${approval}${execution ? ` / ${execution}` : ""}`;
 }
 
 function ProjectTableActions({ project, runtime, onStartProject, onStopProject, onRestartProject, onTakeOverProject, localControlsEnabled }) {

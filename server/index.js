@@ -2204,16 +2204,17 @@ function isRunning(child) {
 
 function checkPortHost(port, host) {
   return new Promise((resolve) => {
+    let settled = false;
+    const finish = (status) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(status);
+    };
     const socket = net.createConnection({ host, port, timeout: 450 });
-    socket.on("connect", () => {
-      socket.destroy();
-      resolve("open");
-    });
-    socket.on("timeout", () => {
-      socket.destroy();
-      resolve("closed");
-    });
-    socket.on("error", () => resolve("closed"));
+    socket.on("connect", () => finish("open"));
+    socket.on("timeout", () => finish("closed"));
+    socket.on("error", () => finish("closed"));
   });
 }
 
@@ -2222,7 +2223,6 @@ async function checkPort(port) {
   const checks = await Promise.all([
     checkPortHost(port, "127.0.0.1"),
     checkPortHost(port, "::1"),
-    checkPortHost(port, "localhost"),
   ]);
   return checks.includes("open") ? "open" : "closed";
 }

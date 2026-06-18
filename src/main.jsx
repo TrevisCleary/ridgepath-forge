@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
@@ -45,6 +45,7 @@ const HOSTED_ACTION_COMMANDS = {
 function App() {
   const [root, setRoot] = useState("");
   const [projects, setProjects] = useState([]);
+  const [projectCatalogStatus, setProjectCatalogStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [selectedId, setSelectedId] = useState("");
@@ -68,11 +69,27 @@ function App() {
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
   const [demoPortalProjectId, setDemoPortalProjectId] = useState("");
+  const projectLoadRef = useRef(null);
 
   async function loadProjects() {
+    if (projectLoadRef.current) return projectLoadRef.current;
+    projectLoadRef.current = loadProjectsOnce().finally(() => {
+      projectLoadRef.current = null;
+    });
+    return projectLoadRef.current;
+  }
+
+  async function loadProjectsOnce() {
     try {
       const data = await apiJson("/api/projects");
       setRoot(data.root);
+      setProjectCatalogStatus({
+        hosted: Boolean(data.hosted),
+        localRunnerPaired: Boolean(data.localRunnerPaired),
+        message: data.message || "",
+        projectCount: data.projectCount ?? (data.projects || []).length,
+        root: data.root || "",
+      });
       setProjects(data.projects || []);
       setSelectedId((current) => (data.projects || []).some((project) => project.id === current) ? current : "");
     } catch (error) {
@@ -446,6 +463,25 @@ function App() {
     });
   }
 
+  async function queueProjectCatalogSync() {
+    const runner = activeLocalRunners[0] || localRunners[0];
+    const command = await createLocalCommandRequest({
+      runnerId: runner?.id || "",
+      commandType: "project-catalog-sync",
+      target: "Project catalog",
+      reason: "Owner requested hosted project catalog refresh from the Projects directory.",
+      requestedBy: "owner",
+      approvalStatus: "approved",
+      executionStatus: "queued",
+      approvedBy: "owner",
+      approvedAt: new Date().toISOString(),
+    });
+    if (command) {
+      setActionNotice("Project catalog sync approved and queued for the paired local runner.");
+    }
+    return command;
+  }
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return projects.filter((project) => {
@@ -473,6 +509,7 @@ function App() {
   const localControlsEnabled = commandCenterLoaded && (!hostedMode || localRunnerPaired);
   const openCommandCount = commandRequests.filter((command) => ["pending", "approved"].includes(command.approvalStatus) && !["succeeded", "failed", "cancelled"].includes(command.executionStatus)).length;
   const openExecutionPacketCount = executionPackets.filter((packet) => !["complete", "failed", "cancelled"].includes(packet.status)).length;
+  const latestProjectSyncCommand = commandRequests.find((command) => command.commandType === "project-catalog-sync") || null;
   const activeMachine = ridgeFabric?.editSession?.currentHost || ridgeFabric?.editSession?.active?.host || "Local";
   const navigationItems = [
     { key: "overview", label: "Overview", icon: <Home size={18} /> },
@@ -642,10 +679,13 @@ function App() {
           root={root}
           hostedMode={hostedMode}
           localRunnerPaired={localRunnerPaired}
+          projectCatalogStatus={projectCatalogStatus}
+          latestProjectSyncCommand={latestProjectSyncCommand}
           query={query}
           filters={filters}
           onQueryChange={setQuery}
           onFiltersChange={setFilters}
+          onSyncProjects={queueProjectCatalogSync}
           onOpenProject={(projectId) => setSelectedId(projectId)}
           onStartProject={(projectId) => runAction(projectId, "start")}
           onStopProject={(projectId) => runAction(projectId, "stop")}
