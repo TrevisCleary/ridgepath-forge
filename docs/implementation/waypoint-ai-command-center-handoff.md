@@ -243,6 +243,8 @@ Executor behavior:
 - Uses the existing local Forge API at `RIDGEPATH_LOCAL_FORGE_API`, defaulting to `http://127.0.0.1:3059`.
 - Supports an explicit allowlist: project sync, Fabric sync, Operations sync, project review, project start/stop/restart/take-over/git-sync, project-management initialization, portfolio draft creation, project registration, project description update, Fabric device update/remove, and project-folder open.
 - Writes `running`, `succeeded`, or `failed` back to Neon with command events.
+- Refreshes the hosted Projects snapshot after successful local project mutations.
+- Refreshes the hosted Fabric snapshot after successful Fabric device mutations.
 - Unsupported command types fail closed with an error.
 
 On 2026-06-18, `411100-PCK39` completed an end-to-end safe runner execution smoke test for `operations-library-sync`; the command was created, approved, claimed, executed, and marked `succeeded`.

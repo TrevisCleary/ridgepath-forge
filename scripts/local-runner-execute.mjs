@@ -122,30 +122,30 @@ async function executeCommand(command, runner) {
       if (!projectId) throw new Error("project-review requires projectId.");
       return await apiJson("/api/agent-runs/project-review", { method: "POST", body: JSON.stringify({ projectId }) });
     case "start-project":
-      return await projectAction(projectId, "start");
+      return await projectActionWithSync(projectId, "start", runner);
     case "stop-project":
-      return await projectAction(projectId, "stop");
+      return await projectActionWithSync(projectId, "stop", runner);
     case "restart-project":
-      return await projectAction(projectId, "restart");
+      return await projectActionWithSync(projectId, "restart", runner);
     case "take-over-project":
-      return await projectAction(projectId, "take-over");
+      return await projectActionWithSync(projectId, "take-over", runner);
     case "git-sync":
-      return await projectAction(projectId, "git-sync");
+      return await projectActionWithSync(projectId, "git-sync", runner);
     case "initialize-project-management":
-      return await projectAction(projectId, "initialize-project-management");
+      return await projectActionWithSync(projectId, "initialize-project-management", runner);
     case "create-portfolio-draft":
-      return await projectAction(projectId, "create-portfolio-draft");
+      return await projectActionWithSync(projectId, "create-portfolio-draft", runner);
     case "update-project-description":
       if (!projectId) throw new Error("update-project-description requires projectId.");
-      return await apiJson(`/api/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", body: JSON.stringify({ description: payload.description || "" }) });
+      return await projectPatchWithSync(projectId, { description: payload.description || "" }, runner);
     case "register-project":
-      return await apiJson("/api/projects/register", { method: "POST", body: JSON.stringify(payload) });
+      return await registerProjectWithSync(payload, runner);
     case "fabric-device-update":
       if (!command.target) throw new Error("fabric-device-update requires target stable identifier.");
-      return await apiJson(`/api/ridge-fabric/devices/${encodeURIComponent(command.target)}`, { method: "PATCH", body: JSON.stringify(payload) });
+      return await fabricActionWithSync(`/api/ridge-fabric/devices/${encodeURIComponent(command.target)}`, { method: "PATCH", body: JSON.stringify(payload) }, runner);
     case "fabric-device-remove":
       if (!command.target) throw new Error("fabric-device-remove requires target stable identifier.");
-      return await apiJson(`/api/ridge-fabric/devices/${encodeURIComponent(command.target)}`, { method: "DELETE" });
+      return await fabricActionWithSync(`/api/ridge-fabric/devices/${encodeURIComponent(command.target)}`, { method: "DELETE" }, runner);
     case "open-path":
       if (projectId) return await projectAction(projectId, "open-folder");
       throw new Error("open-path is only enabled for project folders until generic path policy is defined.");
@@ -157,6 +157,30 @@ async function executeCommand(command, runner) {
 async function projectAction(projectId, action) {
   if (!projectId) throw new Error(`${action} requires projectId.`);
   return await apiJson(`/api/projects/${encodeURIComponent(projectId)}/${action}`, { method: "POST" });
+}
+
+async function projectActionWithSync(projectId, action, runner) {
+  const actionResult = await projectAction(projectId, action);
+  const sync = await syncProjects(runner);
+  return { actionResult, sync };
+}
+
+async function projectPatchWithSync(projectId, patch, runner) {
+  const actionResult = await apiJson(`/api/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", body: JSON.stringify(patch) });
+  const sync = await syncProjects(runner);
+  return { actionResult, sync };
+}
+
+async function registerProjectWithSync(payload, runner) {
+  const actionResult = await apiJson("/api/projects/register", { method: "POST", body: JSON.stringify(payload) });
+  const sync = await syncProjects(runner);
+  return { actionResult, sync };
+}
+
+async function fabricActionWithSync(route, options, runner) {
+  const actionResult = await apiJson(route, options);
+  const sync = await syncFabric(runner);
+  return { actionResult, sync };
 }
 
 async function runOnce() {
