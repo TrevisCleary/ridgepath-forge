@@ -922,6 +922,26 @@ h3 {
   background: linear-gradient(180deg, #ffffff 0%, #f7fbfc 100%);
 }
 
+.directory-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.directory-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: 999px;
+  padding: 0 9px;
+  background: var(--color-background-primary);
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
 .directory-filters {
   width: min(760px, 100%);
   display: grid;
@@ -966,6 +986,26 @@ h3 {
 
 .project-table-row:hover {
   background: var(--color-background-soft);
+}
+
+.project-empty-state {
+  min-height: 160px;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 10px;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.project-empty-state strong {
+  color: var(--color-brand-navy);
+  font-size: 0.98rem;
+}
+
+.project-empty-state span {
+  max-width: 580px;
+  line-height: 1.45;
 }
 
 .table-actions {

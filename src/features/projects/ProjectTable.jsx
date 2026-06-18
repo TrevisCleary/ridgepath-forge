@@ -15,6 +15,11 @@ export function ProjectTable({
   busy,
   loading,
   projects,
+  catalogProjects = projects,
+  totalProjects = projects.length,
+  root = "",
+  hostedMode = false,
+  localRunnerPaired = false,
   query,
   filters,
   onQueryChange,
@@ -26,11 +31,25 @@ export function ProjectTable({
   onTakeOverProject,
   localControlsEnabled = true,
 }) {
+  const latestObservedAt = latestProjectObservation(catalogProjects);
+  const hasActiveFilters = Boolean(query.trim()) || !filters.work || !filters.ridgepath || !filters.personal;
+  const resetFilters = () => {
+    onQueryChange("");
+    onFiltersChange({ work: true, ridgepath: true, personal: true });
+  };
+
   return (
     <section className="project-directory" aria-labelledby="project-directory-title">
       <div className="directory-toolbar">
         <div>
           <h2 id="project-directory-title">Project Directory</h2>
+          <div className="directory-meta">
+            <span>{projects.length} shown</span>
+            <span>{totalProjects} synced</span>
+            <span>{hostedMode ? "Neon catalog" : root || "Local catalog"}</span>
+            <span>{hostedMode ? (localRunnerPaired ? "Runner paired" : "Runner not paired") : "Local controls"}</span>
+            {latestObservedAt ? <span>Observed {formatObservedTime(latestObservedAt)}</span> : null}
+          </div>
         </div>
         <div className="directory-filters">
           <input
@@ -99,7 +118,24 @@ export function ProjectTable({
               })
             ) : (
               <tr>
-                <td colSpan="8">No matching projects.</td>
+                <td colSpan="8">
+                  <div className="project-empty-state">
+                    <strong>{totalProjects ? "No matching projects." : "No projects are synced yet."}</strong>
+                    <span>
+                      {totalProjects
+                        ? `${hostedMode ? "The hosted catalog" : "The project catalog"} has projects, but the current search or audience filters hide them.`
+                        : hostedMode
+                          ? "Run the local project sync from a paired Forge runner to populate the hosted catalog."
+                          : "Check the configured project root and refresh discovery."}
+                    </span>
+                    {hasActiveFilters ? (
+                      <button className="secondary-action" type="button" onClick={resetFilters}>
+                        <RotateCw size={15} />
+                        Reset Filters
+                      </button>
+                    ) : null}
+                  </div>
+                </td>
               </tr>
             )}
           </tbody>
@@ -107,6 +143,20 @@ export function ProjectTable({
       </div>
     </section>
   );
+}
+
+function latestProjectObservation(projects) {
+  return projects
+    .map((project) => project.observedAt || project.metadata?.observedAt)
+    .filter(Boolean)
+    .sort()
+    .at(-1) || "";
+}
+
+function formatObservedTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function ProjectTableActions({ project, runtime, onStartProject, onStopProject, onRestartProject, onTakeOverProject, localControlsEnabled }) {

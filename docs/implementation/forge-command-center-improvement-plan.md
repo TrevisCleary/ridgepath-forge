@@ -525,3 +525,13 @@ This gives an immediate command-center feel without destabilizing start/stop/run
 - Verified `npm.cmd run build`.
 - Verified local Neon-backed API status and paired runner endpoints.
 - Remaining next step: browser-verify the deployed `ops.ridgepath.io` Projects and Runtime views after the production deployment finishes.
+
+### Projects Catalog Diagnostics Pass
+
+- Added Project Directory metadata showing filtered count, synced catalog count, catalog source, and local runner/control state.
+- Added a guided empty state that distinguishes a truly empty project catalog from search/filter mismatch.
+- Added a `Reset Filters` action so a hidden catalog can be restored without guessing which filter caused the mismatch.
+- Verified local `/api/projects` returns 16 projects from `C:\Development\Projects`.
+- Browser-verified local Projects view on `http://127.0.0.1:3060`: 16 rows render, an impossible search shows `0 shown` with `16 synced`, and `Reset Filters` restores all rows.
+- Observed one transient local Vite proxy 502 while the API watchdog restarted the API under a new process; direct `/api/health` and `/api/projects` returned HTTP 200 after restart.
+- Remaining next step: run the same Projects check on protected `ops.ridgepath.io` from an authenticated browser session.

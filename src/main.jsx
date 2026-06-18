@@ -635,6 +635,11 @@ function App() {
           busy={busy}
           loading={loading}
           projects={filtered}
+          catalogProjects={projects}
+          totalProjects={projects.length}
+          root={root}
+          hostedMode={hostedMode}
+          localRunnerPaired={localRunnerPaired}
           query={query}
           filters={filters}
           onQueryChange={setQuery}
