@@ -318,7 +318,8 @@ Operational notes:
 - Do not run `vercel link` interactively from this repository unless the target project is confirmed as `ridgepath-ops`.
 - A temporary accidental Vercel project named `ridgepath-forge` was created during protected API probing.
 - On 2026-06-18, `vercel git disconnect --yes` was run against the accidental `ridgepath-forge` project, disconnecting `TrevisCleary/ridgepath-forge` from that project.
-- Historical `ridgepath-forge.*` deployments may still appear in Vercel, but future Git pushes should deploy only the intended `ridgepath-ops` project.
+- The accidental `ridgepath-forge` Vercel project was then removed with `vercel project rm ridgepath-forge`.
+- Follow-up verification showed no local `.vercel` link in this checkout, no live `ridgepath-forge` aliases in the visible alias list, and the current `ops.ridgepath.io` alias assigned to the latest `ridgepath-ops` production deployment.
 - Keep local `.vercel` metadata out of the working tree unless intentionally linked for a one-off Vercel operation; remove it immediately after the operation.
 
 ## Waypoint Agent Loop Guardrails

@@ -7,30 +7,42 @@ export const config = {
 export default function middleware(request) {
   const username = process.env.OPS_AUTH_USERNAME;
   const password = process.env.OPS_AUTH_PASSWORD;
+  const isApiRequest = request.nextUrl?.pathname?.startsWith("/api/") || request.url.includes("/api/");
 
   if (!username || !password) {
-    return new Response("RidgePath Ops authentication is not configured.", {
-      status: 503,
-      headers: {
-        "Cache-Control": "no-store",
-        "Content-Type": "text/plain; charset=utf-8",
-      },
-    });
+    return protectedResponse(isApiRequest, "RidgePath Ops authentication is not configured.", 503);
   }
 
   const authorization = request.headers.get("authorization") || "";
   if (!isAuthorized(authorization, username, password)) {
-    return new Response("Authentication required.", {
-      status: 401,
-      headers: {
-        "Cache-Control": "no-store",
-        "Content-Type": "text/plain; charset=utf-8",
-        "WWW-Authenticate": `Basic realm="${REALM}", charset="UTF-8"`,
-      },
+    return protectedResponse(isApiRequest, "Authentication required.", 401, {
+      "WWW-Authenticate": `Basic realm="${REALM}", charset="UTF-8"`,
     });
   }
 
   return undefined;
+}
+
+function protectedResponse(isApiRequest, message, status, extraHeaders = {}) {
+  if (isApiRequest) {
+    return new Response(JSON.stringify({ error: message, protected: true }), {
+      status,
+      headers: {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json; charset=utf-8",
+        ...extraHeaders,
+      },
+    });
+  }
+
+  return new Response(message, {
+    status,
+    headers: {
+      "Cache-Control": "no-store",
+      "Content-Type": "text/plain; charset=utf-8",
+      ...extraHeaders,
+    },
+  });
 }
 
 function isAuthorized(header, expectedUsername, expectedPassword) {

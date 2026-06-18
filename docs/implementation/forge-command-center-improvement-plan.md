@@ -513,3 +513,15 @@ This gives an immediate command-center feel without destabilizing start/stop/run
 - Restarted Forge through `scripts/restart-launcher.ps1`; API `3059`, UI `3060`, and temporary review UI `3075` returned HTTP 200.
 - Verified the temporary review UI proxy returns Neon-backed command-center status, agent runs, proposals, and saved owner feedback.
 - Remaining next step: add a proposal detail page/drawer with full evidence, approval history, and execution readiness checks before enabling any mutation agent.
+
+### Hosted Ops Stabilization Pass
+
+- Verified the accidental `ridgepath-forge` Vercel project was disconnected, removed, and no longer appears as a live alias target.
+- Confirmed the intended production deployment is `ridgepath-ops` with `ops.ridgepath.io` assigned to the latest ready production deployment.
+- Confirmed the local checkout has no `.vercel` metadata so future CLI commands do not silently target the wrong Vercel project.
+- Confirmed Neon contains 16 synced `command_center_projects` and one local runner record.
+- Updated hosted middleware so protected `/api/*` requests return JSON errors instead of plain text.
+- Updated the frontend API helper to send same-origin credentials and distinguish authentication/HTTP/non-JSON failures from local API outages.
+- Verified `npm.cmd run build`.
+- Verified local Neon-backed API status and paired runner endpoints.
+- Remaining next step: browser-verify the deployed `ops.ridgepath.io` Projects and Runtime views after the production deployment finishes.
