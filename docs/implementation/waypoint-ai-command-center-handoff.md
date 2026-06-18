@@ -188,9 +188,10 @@ Current runner behavior:
 - `npm.cmd run runner:start` runs the heartbeat loop every 60 seconds.
 - `npm.cmd run runner:queue` writes a heartbeat and reads approved queued commands once.
 - `npm.cmd run runner:queue:start` watches approved queued commands every `RIDGEPATH_RUNNER_QUEUE_SECONDS` seconds, defaulting to 60.
-- `npm.cmd run runner:sync-all` publishes both Projects and Fabric snapshots into Neon.
+- `npm.cmd run runner:sync-all` publishes Projects, Fabric, and Operations Library snapshots into Neon.
 - `npm.cmd run runner:sync-projects` reads the local Forge API and publishes the hosted project catalog into Neon.
 - `npm.cmd run runner:sync-fabric` reads the local Forge API and publishes the hosted Ridge Fabric snapshot into Neon.
+- `npm.cmd run runner:sync-operations` reads the local Forge API and publishes the hosted Operations Library validation snapshot into Neon.
 - The runner loads `.env.local` or `.env` and uses `COMMAND_CENTER_DATABASE_URL`.
 - Runner identity defaults to the Windows hostname and can be overridden with:
   - `RIDGEPATH_RUNNER_ID`
@@ -205,6 +206,7 @@ Current capabilities reported by the heartbeat:
 - `heartbeat`
 - `project-catalog-sync`
 - `fabric-registry-sync`
+- `operations-library-sync`
 - `project-inventory`
 - `fabric-inventory`
 - `project-review`
@@ -257,6 +259,17 @@ Current behavior:
 - Hosted Fabric can display devices, files, counts, and conflicts from the latest sync.
 - Hosted Fabric edits, deletes, and open-folder requests are queued as local runner commands instead of direct hosted filesystem writes.
 - On 2026-06-18, `411100-PCK39` synced 5 Fabric devices from `C:\Development\Shared\ridge-fabric-registry`.
+
+## Hosted Operations Library Snapshot
+
+Hosted `/api/operations-library/status` now reads the latest synced Operations Library validation snapshot from Neon.
+
+Current behavior:
+
+- Local Forge remains responsible for validating the local Operations Library filesystem.
+- `runner:sync-operations` copies the validation result into Neon.
+- Hosted Overview and the Operations modal can show the real validation status.
+- On 2026-06-18, `411100-PCK39` synced Operations Library status as `Valid` with 0 issues from `C:\Development\Shared\codex-operations-library`.
 
 ## Waypoint Agent Loop Guardrails
 

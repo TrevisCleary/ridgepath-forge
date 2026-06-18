@@ -44,6 +44,7 @@ async function sendHeartbeat() {
       "heartbeat",
       "project-catalog-sync",
       "fabric-registry-sync",
+      "operations-library-sync",
       "project-inventory",
       "fabric-inventory",
       "project-review",

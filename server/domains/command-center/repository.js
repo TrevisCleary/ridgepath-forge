@@ -13,6 +13,7 @@ const COMMAND_REQUESTS_FILE = path.join(DATA_DIR, "command-requests.json");
 const COMMAND_EVENTS_FILE = path.join(DATA_DIR, "command-events.json");
 const PROJECT_CATALOG_FILE = path.join(DATA_DIR, "project-catalog.json");
 const FABRIC_REGISTRY_FILE = path.join(DATA_DIR, "fabric-registry.json");
+const OPERATIONS_LIBRARY_FILE = path.join(DATA_DIR, "operations-library.json");
 let commandCenterSql = null;
 let schemaReady = false;
 const RUNNER_STALE_MS = 2 * 60 * 1000;
@@ -270,6 +271,19 @@ function normalizeFabricRegistrySnapshot(input = {}) {
   };
 }
 
+function normalizeOperationsLibrarySnapshot(input = {}) {
+  const timestamp = input.observedAt || input.updatedAt || nowIso();
+  return {
+    hosted: Boolean(input.hosted),
+    settings: normalizeObject(input.settings),
+    validation: normalizeObject(input.validation),
+    machineId: input.machineId || "",
+    observedAt: timestamp,
+    updatedAt: input.updatedAt || timestamp,
+    message: input.message || "",
+  };
+}
+
 function normalizeCommandRequest(input = {}) {
   const timestamp = input.createdAt || input.updatedAt || nowIso();
   const approvalStatus = COMMAND_APPROVAL_STATUSES.has(input.approvalStatus) ? input.approvalStatus : "pending";
@@ -444,6 +458,15 @@ async function ensureSchema(sql) {
       root text not null default '',
       machine_id text not null default '',
       registry jsonb not null default '{}'::jsonb,
+      observed_at timestamptz not null,
+      updated_at timestamptz not null default now()
+    )
+  `;
+  await sql`
+    create table if not exists operations_library_snapshots (
+      id text primary key,
+      machine_id text not null default '',
+      status jsonb not null default '{}'::jsonb,
       observed_at timestamptz not null,
       updated_at timestamptz not null default now()
     )
@@ -750,6 +773,73 @@ export async function syncRidgeFabricSnapshot(registry = {}, context = {}) {
   }
 
   await writeJson(FABRIC_REGISTRY_FILE, snapshot);
+  return snapshot;
+}
+
+export async function getOperationsLibrarySnapshot() {
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    const rows = await sql`
+      select *
+      from operations_library_snapshots
+      where id = 'current'
+      limit 1
+    `;
+    if (!rows.length) return normalizeOperationsLibrarySnapshot({
+      hosted: true,
+      validation: {
+        status: "Not synced",
+        issues: ["Operations Library has not been synced yet. Run the local operations sync from a paired runner."],
+      },
+      message: "Operations Library has not been synced yet. Run the local operations sync from a paired runner.",
+    });
+    return normalizeOperationsLibrarySnapshot({
+      ...parseJson(rows[0].status, {}),
+      machineId: rows[0].machine_id,
+      observedAt: rows[0].observed_at,
+      updatedAt: rows[0].updated_at,
+    });
+  }
+
+  return normalizeOperationsLibrarySnapshot(await readJson(OPERATIONS_LIBRARY_FILE, {
+    hosted: true,
+    validation: {
+      status: "Not synced",
+      issues: ["Operations Library has not been synced yet. Run the local operations sync from a paired runner."],
+    },
+    message: "Operations Library has not been synced yet. Run the local operations sync from a paired runner.",
+  }));
+}
+
+export async function syncOperationsLibrarySnapshot(status = {}, context = {}) {
+  const timestamp = nowIso();
+  const normalizedContext = normalizeObject(context);
+  const snapshot = normalizeOperationsLibrarySnapshot({
+    ...normalizeObject(status),
+    hosted: true,
+    machineId: normalizedContext.machineId || status.machineId,
+    observedAt: timestamp,
+    updatedAt: timestamp,
+    message: "Hosted Ops is reading the latest synced Operations Library validation snapshot from Neon.",
+  });
+
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    await sql`
+      insert into operations_library_snapshots (id, machine_id, status, observed_at, updated_at)
+      values ('current', ${snapshot.machineId}, ${serializeJson(snapshot)}::jsonb, ${snapshot.observedAt}, ${snapshot.updatedAt})
+      on conflict (id) do update set
+        machine_id = excluded.machine_id,
+        status = excluded.status,
+        observed_at = excluded.observed_at,
+        updated_at = excluded.updated_at
+    `;
+    return snapshot;
+  }
+
+  await writeJson(OPERATIONS_LIBRARY_FILE, snapshot);
   return snapshot;
 }
 
