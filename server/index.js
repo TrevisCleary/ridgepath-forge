@@ -24,6 +24,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.resolve(__dirname, "..");
+loadLocalEnvFiles(APP_ROOT);
 const DATA_DIR = path.join(APP_ROOT, "data");
 const SETTINGS_FILE = path.join(APP_ROOT, "launcher-settings.json");
 const OVERRIDES_FILE = path.join(DATA_DIR, "project-overrides.json");
@@ -36,6 +37,27 @@ const MANAGED = new Map();
 const LOG_LIMIT = 120;
 const ACTIVITY_LIMIT = 200;
 let demoPortalSql = null;
+
+function loadLocalEnvFiles(root) {
+  for (const fileName of [".env.local", ".env"]) {
+    const filePath = path.join(root, fileName);
+    if (!fsSync.existsSync(filePath)) continue;
+    const text = fsSync.readFileSync(filePath, "utf8");
+    for (const rawLine of text.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#") || !line.includes("=")) continue;
+      const index = line.indexOf("=");
+      const key = line.slice(0, index).trim();
+      let value = line.slice(index + 1).trim();
+      if (!key || process.env[key]) continue;
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      process.env[key] = value;
+    }
+  }
+}
+
 const DEFAULT_SETTINGS = {
   operationsLibrary: {
     root: OPERATIONS_LIBRARY_ROOT,

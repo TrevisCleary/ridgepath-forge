@@ -197,6 +197,7 @@ Current runner behavior:
 - `npm.cmd run runner:packets` claims one ready execution packet and writes a local Codex handoff artifact under `data/command-center/execution-packet-handoffs`.
 - `npm.cmd run runner:packets:start` watches ready execution packets every `RIDGEPATH_RUNNER_PACKET_SECONDS` seconds, defaulting to 60.
 - The runner loads `.env.local` or `.env` and uses `COMMAND_CENTER_DATABASE_URL`.
+- The local Forge API also loads `.env.local` or `.env` at startup, so local API routes such as `/api/agent-runs/project-review` can write command-center records to Neon even when started outside the PowerShell watchdog.
 - Runner identity defaults to the Windows hostname and can be overridden with:
   - `RIDGEPATH_RUNNER_ID`
   - `RIDGEPATH_RUNNER_NAME`
