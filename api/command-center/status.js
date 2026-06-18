@@ -18,6 +18,7 @@ export default async function handler(req, res) {
     listExecutionPackets(),
   ]);
   const openCommands = commands.filter((command) => ["pending", "approved"].includes(command.approvalStatus) && !["succeeded", "failed", "cancelled"].includes(command.executionStatus));
+  const openExecutionPackets = executionPackets.filter((packet) => !["complete", "failed", "cancelled"].includes(packet.status));
   return json(res, {
     ...status,
     hosted: true,
@@ -29,6 +30,7 @@ export default async function handler(req, res) {
     commandRequestCount: commands.length,
     openCommandRequestCount: openCommands.length,
     executionPacketCount: executionPackets.length,
+    openExecutionPacketCount: openExecutionPackets.length,
     runners: activeRunners.slice(0, 3),
   });
 }

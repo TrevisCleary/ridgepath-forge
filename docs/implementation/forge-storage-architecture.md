@@ -319,8 +319,27 @@ Fields:
 - `branch_name`
 - `status`
 - `validation_result`
+- `result`
+- `error`
+- `claimed_by_runner_id`
+- `claimed_at`
+- `claim_expires_at`
+- `finished_at`
 - `created_at`
 - `updated_at`
+
+### execution_packet_events
+
+Immutable packet audit events.
+
+Fields:
+
+- `id`
+- `packet_id`
+- `event_type`
+- `actor`
+- `detail`
+- `created_at`
 
 ## Waypoint Role
 
@@ -402,11 +421,12 @@ As of 2026-06-18, Forge has the first Neon-backed command-center storage pass in
 
 - `COMMAND_CENTER_DATABASE_URL` is the command-center-specific database setting.
 - `.env.local` is loaded by the API watchdog and ignored by Git.
-- `agent_runs`, `findings`, `proposals`, `approval_events`, `execution_packets`, `local_runners`, `command_center_projects`, `command_requests`, and `command_events` are created automatically when Neon is configured.
+- `agent_runs`, `findings`, `proposals`, `approval_events`, `execution_packets`, `execution_packet_events`, `local_runners`, `command_center_projects`, `command_requests`, and `command_events` are created automatically when Neon is configured.
 - Local JSON remains available as an offline fallback for the same repository API.
 - Owner feedback, approval events, and proposal branch target policy are persisted in Neon.
 - New-project bootstrap context and key features are captured locally in the project registry and surfaced back through project discovery for future review agents.
 - Approved proposals create durable `execution_packets` for Codex or a local runner to pick up as owner-authorized implementation work.
+- Execution packets can now be claimed, updated, completed, failed, cancelled, and audited through `execution_packet_events`.
 - Runtime command requests can be queued, approved, claimed, executed through an allowlisted local runner, and audited through command events.
 - Hosted Projects are populated through `runner:sync-projects`, which reads the local Forge API and publishes a hosted-safe project catalog snapshot into Neon.
 

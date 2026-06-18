@@ -256,9 +256,12 @@ Approved proposals now create durable execution packets.
 Current behavior:
 
 - `execution_packets` is created automatically in Neon when `COMMAND_CENTER_DATABASE_URL` is configured.
-- `/api/execution-packets` lists approved work packets for hosted Ops.
-- `/api/command-center/status` includes `executionPacketCount`.
-- The Approval Queue displays packet readiness on approved proposals.
+- `execution_packet_events` records packet creation, claim, and status-update audit events.
+- `/api/execution-packets` lists approved work packets and recent packet events for hosted Ops.
+- `/api/execution-packets/claim` claims one ready packet for a runner.
+- `/api/execution-packets/[packetId]` updates packet status, branch, validation result, result payload, or error.
+- `/api/command-center/status` includes `executionPacketCount` and `openExecutionPacketCount`.
+- The Approval Queue displays packet readiness, claim owner, and latest packet event on approved proposals.
 - Packet constraints include the proposal summary, why-now context, rollback notes, validation plan, and owner feedback.
 
 Execution packets are the handoff boundary between owner approval and Codex/runner implementation. They should be consumed only after approval and should preserve the selected branch policy.

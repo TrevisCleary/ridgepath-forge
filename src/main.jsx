@@ -61,6 +61,7 @@ function App() {
   const [proposals, setProposals] = useState([]);
   const [approvalEvents, setApprovalEvents] = useState([]);
   const [executionPackets, setExecutionPackets] = useState([]);
+  const [executionPacketEvents, setExecutionPacketEvents] = useState([]);
   const [localRunners, setLocalRunners] = useState([]);
   const [commandRequests, setCommandRequests] = useState([]);
   const [commandEvents, setCommandEvents] = useState([]);
@@ -106,6 +107,7 @@ function App() {
     setProposals(proposalData.proposals || []);
     setApprovalEvents(proposalData.approvalEvents || []);
     setExecutionPackets(packetData.packets || []);
+    setExecutionPacketEvents(packetData.events || []);
     setLocalRunners(runnerData.runners || []);
     setCommandRequests(commandData.commands || []);
     setCommandEvents(commandData.events || []);
@@ -583,6 +585,7 @@ function App() {
         <ApprovalQueue
           proposals={proposals}
           executionPackets={executionPackets}
+          executionPacketEvents={executionPacketEvents}
           projects={projects}
           storageStatus={commandCenterStatus}
           busy={busy}

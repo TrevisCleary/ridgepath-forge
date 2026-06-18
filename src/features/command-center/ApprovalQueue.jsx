@@ -11,6 +11,7 @@ const STATUS_OPTIONS = [
 export function ApprovalQueue({
   proposals,
   executionPackets = [],
+  executionPacketEvents = [],
   projects,
   storageStatus,
   busy,
@@ -27,6 +28,13 @@ export function ApprovalQueue({
     () => new Map(executionPackets.map((packet) => [packet.proposalId, packet])),
     [executionPackets],
   );
+  const latestEventByPacketId = useMemo(() => {
+    const map = new Map();
+    for (const event of executionPacketEvents) {
+      if (!map.has(event.packetId)) map.set(event.packetId, event);
+    }
+    return map;
+  }, [executionPacketEvents]);
   const visible = proposals.filter((proposal) => {
     if (selectedStatus === "open") return ["proposed", "needs-evidence", "deferred"].includes(proposal.status);
     if (selectedStatus === "all") return true;
@@ -67,6 +75,7 @@ export function ApprovalQueue({
         {visible.length ? visible.map((proposal) => {
           const project = projectById.get(proposal.projectId);
           const packet = packetByProposalId.get(proposal.id);
+          const latestPacketEvent = packet ? latestEventByPacketId.get(packet.id) : null;
           const feedback = feedbackDrafts[proposal.id] ?? proposal.ownerNotes ?? "";
           const branchPolicy = branchPolicies[proposal.id] ?? proposal.targetBranchPolicy ?? "feature-branch";
           const submitDecision = (option) => onUpdateProposal(proposal.id, {
@@ -101,6 +110,8 @@ export function ApprovalQueue({
                       Execution packet: {packet ? `${formatStatus(packet.status)} · ${formatStatus(packet.branchPolicy)}` : "pending"}
                     </span>
                   ) : null}
+                  {packet?.claimedByRunnerId ? <span>Claimed by: {packet.claimedByRunnerId}</span> : null}
+                  {latestPacketEvent ? <span>Packet event: {formatStatus(latestPacketEvent.eventType)}</span> : null}
                   <span>Risk: {proposal.risk}</span>
                   <span>Confidence: {proposal.confidence}</span>
                   <span>{formatTime(proposal.updatedAt || proposal.createdAt)}</span>

@@ -8,6 +8,7 @@ const AGENT_RUNS_FILE = path.join(DATA_DIR, "agent-runs.json");
 const PROPOSALS_FILE = path.join(DATA_DIR, "proposals.json");
 const APPROVAL_EVENTS_FILE = path.join(DATA_DIR, "approval-events.json");
 const EXECUTION_PACKETS_FILE = path.join(DATA_DIR, "execution-packets.json");
+const EXECUTION_PACKET_EVENTS_FILE = path.join(DATA_DIR, "execution-packet-events.json");
 const FINDINGS_FILE = path.join(DATA_DIR, "findings.json");
 const LOCAL_RUNNERS_FILE = path.join(DATA_DIR, "local-runners.json");
 const COMMAND_REQUESTS_FILE = path.join(DATA_DIR, "command-requests.json");
@@ -21,6 +22,7 @@ const RUNNER_STALE_MS = 2 * 60 * 1000;
 const COMMAND_CLAIM_LEASE_MS = 5 * 60 * 1000;
 const COMMAND_APPROVAL_STATUSES = new Set(["pending", "approved", "rejected", "cancelled"]);
 const COMMAND_EXECUTION_STATUSES = new Set(["blocked", "queued", "claimed", "running", "succeeded", "failed", "cancelled"]);
+const EXECUTION_PACKET_STATUSES = new Set(["ready", "claimed", "running", "blocked", "complete", "failed", "cancelled"]);
 
 function databaseUrl() {
   return process.env.COMMAND_CENTER_DATABASE_URL || process.env.DATABASE_URL || "";
@@ -131,9 +133,26 @@ function executionPacketFromRow(row) {
     branchPolicy: row.branch_policy || "feature-branch",
     status: row.status,
     validationResult: row.validation_result || "",
+    result: parseJson(row.result, {}),
+    error: row.error || "",
+    claimedByRunnerId: row.claimed_by_runner_id || "",
+    claimedAt: row.claimed_at || "",
+    claimExpiresAt: row.claim_expires_at || "",
+    finishedAt: row.finished_at || "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   });
+}
+
+function executionPacketEventFromRow(row) {
+  return {
+    id: row.id,
+    packetId: row.packet_id,
+    eventType: row.event_type,
+    actor: row.actor,
+    detail: parseJson(row.detail, {}),
+    createdAt: row.created_at,
+  };
 }
 
 function commandRequestFromRow(row) {
@@ -303,6 +322,7 @@ function normalizeOperationsLibrarySnapshot(input = {}) {
 
 function normalizeExecutionPacket(input = {}) {
   const timestamp = input.updatedAt || input.createdAt || nowIso();
+  const status = EXECUTION_PACKET_STATUSES.has(input.status) ? input.status : "ready";
   return {
     id: input.id || idFor("packet"),
     proposalId: input.proposalId || "",
@@ -311,8 +331,14 @@ function normalizeExecutionPacket(input = {}) {
     constraints: normalizeArray(input.constraints),
     branchName: input.branchName || "",
     branchPolicy: input.branchPolicy || "feature-branch",
-    status: input.status || "ready",
+    status,
     validationResult: input.validationResult || "",
+    result: normalizeObject(input.result),
+    error: input.error || "",
+    claimedByRunnerId: input.claimedByRunnerId || "",
+    claimedAt: input.claimedAt || "",
+    claimExpiresAt: input.claimExpiresAt || "",
+    finishedAt: input.finishedAt || "",
     createdAt: input.createdAt || timestamp,
     updatedAt: input.updatedAt || timestamp,
   };
@@ -452,8 +478,30 @@ async function ensureSchema(sql) {
       branch_policy text not null default 'feature-branch',
       status text not null default 'ready',
       validation_result text not null default '',
+      result jsonb not null default '{}'::jsonb,
+      error text not null default '',
+      claimed_by_runner_id text,
+      claimed_at timestamptz,
+      claim_expires_at timestamptz,
+      finished_at timestamptz,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
+    )
+  `;
+  await sql`alter table execution_packets add column if not exists result jsonb not null default '{}'::jsonb`;
+  await sql`alter table execution_packets add column if not exists error text not null default ''`;
+  await sql`alter table execution_packets add column if not exists claimed_by_runner_id text`;
+  await sql`alter table execution_packets add column if not exists claimed_at timestamptz`;
+  await sql`alter table execution_packets add column if not exists claim_expires_at timestamptz`;
+  await sql`alter table execution_packets add column if not exists finished_at timestamptz`;
+  await sql`
+    create table if not exists execution_packet_events (
+      id text primary key,
+      packet_id text not null references execution_packets(id) on delete cascade,
+      event_type text not null,
+      actor text not null default 'system',
+      detail jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now()
     )
   `;
   await sql`
@@ -668,6 +716,59 @@ export async function listExecutionPackets(proposalId = "") {
     .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")));
 }
 
+export async function listExecutionPacketEvents(packetId = "") {
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    const rows = packetId
+      ? await sql`
+          select *
+          from execution_packet_events
+          where packet_id = ${packetId}
+          order by created_at desc
+        `
+      : await sql`
+          select *
+          from execution_packet_events
+          order by created_at desc
+          limit 250
+        `;
+    return rows.map(executionPacketEventFromRow);
+  }
+
+  const events = normalizeArray(await readJson(EXECUTION_PACKET_EVENTS_FILE, []));
+  return events
+    .filter((event) => !packetId || event.packetId === packetId)
+    .sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")))
+    .slice(0, packetId ? events.length : 250);
+}
+
+async function appendExecutionPacketEvent(packetId, eventType, detail = {}, actor = "system") {
+  const event = {
+    id: idFor("packet_event"),
+    packetId,
+    eventType,
+    actor,
+    detail: normalizeObject(detail),
+    createdAt: nowIso(),
+  };
+
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    await sql`
+      insert into execution_packet_events (id, packet_id, event_type, actor, detail, created_at)
+      values (${event.id}, ${event.packetId}, ${event.eventType}, ${event.actor}, ${serializeJson(event.detail)}::jsonb, ${event.createdAt})
+    `;
+    return event;
+  }
+
+  const events = normalizeArray(await readJson(EXECUTION_PACKET_EVENTS_FILE, []));
+  events.unshift(event);
+  await writeJson(EXECUTION_PACKET_EVENTS_FILE, events.slice(0, 1000));
+  return event;
+}
+
 export async function createExecutionPacketForProposal(proposal, patch = {}) {
   const timestamp = nowIso();
   const packet = normalizeExecutionPacket({
@@ -695,30 +796,168 @@ export async function createExecutionPacketForProposal(proposal, patch = {}) {
     await sql`
       insert into execution_packets (
         id, proposal_id, project_id, objective, constraints, branch_name, branch_policy, status,
-        validation_result, created_at, updated_at
+        validation_result, result, error, claimed_by_runner_id, claimed_at, claim_expires_at, finished_at,
+        created_at, updated_at
       )
       values (
         ${packet.id}, ${packet.proposalId}, ${packet.projectId || null}, ${packet.objective},
         ${serializeJson(packet.constraints)}::jsonb, ${packet.branchName}, ${packet.branchPolicy},
-        ${packet.status}, ${packet.validationResult}, ${packet.createdAt}, ${packet.updatedAt}
+        ${packet.status}, ${packet.validationResult}, ${serializeJson(packet.result)}::jsonb, ${packet.error},
+        ${packet.claimedByRunnerId || null}, ${packet.claimedAt || null}, ${packet.claimExpiresAt || null},
+        ${packet.finishedAt || null}, ${packet.createdAt}, ${packet.updatedAt}
       )
       on conflict (id) do update set
         project_id = excluded.project_id,
         objective = excluded.objective,
         constraints = excluded.constraints,
         branch_policy = excluded.branch_policy,
-        status = excluded.status,
         updated_at = excluded.updated_at
     `;
+    await appendExecutionPacketEvent(packet.id, "created_or_refreshed", {
+      proposalId: packet.proposalId,
+      projectId: packet.projectId,
+      status: packet.status,
+      branchPolicy: packet.branchPolicy,
+    }, "system");
     return packet;
   }
 
   const packets = normalizeArray(await readJson(EXECUTION_PACKETS_FILE, [])).map(normalizeExecutionPacket);
   const index = packets.findIndex((candidate) => candidate.id === packet.id);
-  if (index >= 0) packets[index] = { ...packets[index], ...packet };
+  if (index >= 0) {
+    packets[index] = normalizeExecutionPacket({
+      ...packets[index],
+      projectId: packet.projectId,
+      objective: packet.objective,
+      constraints: packet.constraints,
+      branchPolicy: packet.branchPolicy,
+      updatedAt: packet.updatedAt,
+    });
+  }
   else packets.unshift(packet);
   await writeJson(EXECUTION_PACKETS_FILE, packets);
+  await appendExecutionPacketEvent(packet.id, "created_or_refreshed", {
+    proposalId: packet.proposalId,
+    projectId: packet.projectId,
+    status: packet.status,
+    branchPolicy: packet.branchPolicy,
+  }, "system");
   return packet;
+}
+
+export async function claimNextExecutionPacketForRunner(runnerId = "") {
+  const normalizedRunnerId = String(runnerId || "").trim();
+  if (!normalizedRunnerId) throw new Error("Runner id is required to claim an execution packet.");
+  const timestamp = nowIso();
+  const claimExpiresAt = new Date(Date.now() + COMMAND_CLAIM_LEASE_MS).toISOString();
+
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    const rows = await sql`
+      with candidate as (
+        select id
+        from execution_packets
+        where status = 'ready'
+        order by created_at asc
+        limit 1
+      )
+      update execution_packets
+      set status = 'claimed',
+          claimed_by_runner_id = ${normalizedRunnerId},
+          claimed_at = ${timestamp},
+          claim_expires_at = ${claimExpiresAt},
+          updated_at = ${timestamp}
+      where id in (select id from candidate)
+      returning *
+    `;
+    if (!rows[0]) return null;
+    const packet = executionPacketFromRow(rows[0]);
+    await appendExecutionPacketEvent(packet.id, "claimed", {
+      runnerId: normalizedRunnerId,
+      claimExpiresAt: packet.claimExpiresAt,
+      status: packet.status,
+    }, normalizedRunnerId);
+    return packet;
+  }
+
+  const packets = normalizeArray(await readJson(EXECUTION_PACKETS_FILE, [])).map(normalizeExecutionPacket);
+  const index = packets.findIndex((packet) => packet.status === "ready");
+  if (index < 0) return null;
+  packets[index] = normalizeExecutionPacket({
+    ...packets[index],
+    status: "claimed",
+    claimedByRunnerId: normalizedRunnerId,
+    claimedAt: timestamp,
+    claimExpiresAt,
+    updatedAt: timestamp,
+  });
+  await writeJson(EXECUTION_PACKETS_FILE, packets);
+  await appendExecutionPacketEvent(packets[index].id, "claimed", {
+    runnerId: normalizedRunnerId,
+    claimExpiresAt,
+    status: packets[index].status,
+  }, normalizedRunnerId);
+  return packets[index];
+}
+
+export async function updateExecutionPacket(packetId, patch = {}) {
+  const timestamp = nowIso();
+  const normalizedPatch = normalizeObject(patch);
+  if (normalizedPatch.status && !EXECUTION_PACKET_STATUSES.has(normalizedPatch.status)) {
+    throw new Error(`Unsupported execution packet status: ${normalizedPatch.status}`);
+  }
+
+  const applyPatch = (current) => {
+    const status = normalizedPatch.status || current.status;
+    return normalizeExecutionPacket({
+      ...current,
+      status,
+      branchName: normalizedPatch.branchName ?? current.branchName,
+      validationResult: normalizedPatch.validationResult ?? current.validationResult,
+      result: normalizedPatch.result ? normalizeObject(normalizedPatch.result) : current.result,
+      error: normalizedPatch.error ?? current.error,
+      finishedAt: ["complete", "failed", "cancelled"].includes(status) ? current.finishedAt || timestamp : current.finishedAt,
+      updatedAt: timestamp,
+    });
+  };
+
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    const existing = await sql`select * from execution_packets where id = ${packetId} limit 1`;
+    if (!existing.length) throw new Error("Execution packet not found.");
+    const next = applyPatch(executionPacketFromRow(existing[0]));
+    await sql`
+      update execution_packets
+      set status = ${next.status},
+          branch_name = ${next.branchName},
+          validation_result = ${next.validationResult},
+          result = ${serializeJson(next.result)}::jsonb,
+          error = ${next.error},
+          finished_at = ${next.finishedAt || null},
+          updated_at = ${next.updatedAt}
+      where id = ${packetId}
+    `;
+    await appendExecutionPacketEvent(packetId, "updated", {
+      status: next.status,
+      branchName: next.branchName,
+      error: next.error,
+    }, normalizedPatch.actor || "owner");
+    return next;
+  }
+
+  const packets = normalizeArray(await readJson(EXECUTION_PACKETS_FILE, [])).map(normalizeExecutionPacket);
+  const index = packets.findIndex((packet) => packet.id === packetId);
+  if (index < 0) throw new Error("Execution packet not found.");
+  packets[index] = applyPatch(packets[index]);
+  await writeJson(EXECUTION_PACKETS_FILE, packets);
+  await appendExecutionPacketEvent(packetId, "updated", {
+    status: packets[index].status,
+    branchName: packets[index].branchName,
+    error: packets[index].error,
+  }, normalizedPatch.actor || "owner");
+  return packets[index];
 }
 
 export async function listLocalRunners() {
