@@ -636,3 +636,14 @@ This gives an immediate command-center feel without destabilizing start/stop/run
 - Added operational guardrails for local actions, machine controls, command approval, execution packets, Operations Library health, and Fabric registry writability.
 - Added a Settings `Refresh State` action that reloads project catalog, command-center status, Fabric registry, and Operations Library status together.
 - Remaining next step: build, browser-verify the Settings workspace locally, then deploy the updated production site.
+
+### Publishing Workspace Pass
+
+- Replaced the Publishing placeholder with a full-page external-surfaces workspace.
+- Added project-wide metrics for catalog size, production URL readiness, missing production URLs, and local-preview-only projects.
+- Added filters for all projects, production-ready projects, URL gaps, and local-only previews.
+- Added searchable publishing cards with production URL, local preview URL, project metadata, and readiness badges.
+- Reused the existing project actions from Project Detail so owners can open a project, open the production URL, configure Demo Portal access, or create/update a portfolio draft directly from Publishing.
+- Preserved the rule that localhost/private URLs are treated as local preview state, not production-ready shareable surfaces.
+- Verified locally through the live Forge UI: Publishing rendered 16 catalog projects, correctly counted one production URL and 15 production URL gaps, filtered to the production-ready RidgePath site, and opened the existing Demo Portal review modal without saving state.
+- Remaining next step: deploy the updated production site, then continue the Automation workspace pass.

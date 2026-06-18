@@ -25,6 +25,7 @@ import { CommandCenterOverview } from "./features/overview/CommandCenterOverview
 import { ProjectDetail } from "./features/projects/ProjectDetail.jsx";
 import { PortTreeModal } from "./features/projects/PortTreeModal.jsx";
 import { ProjectTable } from "./features/projects/ProjectTable.jsx";
+import { PublishingWorkspace } from "./features/publishing/PublishingWorkspace.jsx";
 import { RegisterProjectModal } from "./features/project-registration/RegisterProjectModal.jsx";
 import { RidgeFabricWorkspace } from "./features/ridge-fabric/RidgeFabricWorkspace.jsx";
 import { SettingsWorkspace } from "./features/settings/SettingsWorkspace.jsx";
@@ -760,15 +761,13 @@ function App() {
           ]}
         />
       ) : activeView === "publishing" ? (
-        <CommandPlaceholder
-          title="Publishing"
-          icon={<Globe2 size={20} />}
-          detail="Demo portal readiness, production URLs, portfolio drafts, screenshots, and public surfaces will be managed here."
-          rows={[
-            ["Projects with production URLs", projects.filter((project) => project.productionUrl).length],
-            ["Portfolio action", "Available in project detail"],
-            ["Demo portal action", "Available in project detail"],
-          ]}
+        <PublishingWorkspace
+          projects={projects}
+          busy={busy}
+          localControlsEnabled={localControlsEnabled}
+          onOpenProject={(projectId) => setSelectedId(projectId)}
+          onLinkDemoPortal={(projectId) => setDemoPortalProjectId(projectId)}
+          onCreatePortfolioDraft={createPortfolioDraft}
         />
       ) : activeView === "operations" ? (
         <OperationsLibraryWorkspace
