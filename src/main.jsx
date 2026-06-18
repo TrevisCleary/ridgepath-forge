@@ -31,6 +31,15 @@ import { apiJson } from "./lib/api.js";
 import "./styles.css";
 
 const POLL_MS = 5000;
+const HOSTED_ACTION_COMMANDS = {
+  start: "start-project",
+  stop: "stop-project",
+  restart: "restart-project",
+  "take-over": "take-over-project",
+  "git-sync": "git-sync",
+  "initialize-project-management": "initialize-project-management",
+  "create-portfolio-draft": "create-portfolio-draft",
+};
 
 function App() {
   const [root, setRoot] = useState("");
@@ -117,6 +126,15 @@ function App() {
   }, [activeView, ridgeFabric, operationsLibrary]);
 
   async function runAction(projectId, action) {
+    if (hostedMode) {
+      const project = projects.find((candidate) => candidate.id === projectId);
+      return queueHostedCommand({
+        commandType: HOSTED_ACTION_COMMANDS[action] || action,
+        projectId,
+        target: project?.path || project?.name || projectId,
+        reason: `Owner requested ${action} for ${project?.name || projectId} from hosted Ops.`,
+      });
+    }
     setBusy(`${projectId}:${action}`);
     setActionError("");
     setActionNotice("");
@@ -133,6 +151,16 @@ function App() {
   }
 
   async function saveDescription(projectId, description) {
+    if (hostedMode) {
+      const project = projects.find((candidate) => candidate.id === projectId);
+      return queueHostedCommand({
+        commandType: "update-project-description",
+        projectId,
+        target: project?.path || project?.name || projectId,
+        reason: `Owner requested project description update for ${project?.name || projectId} from hosted Ops.`,
+        payload: { description },
+      });
+    }
     setBusy(`${projectId}:save`);
     try {
       await apiJson(`/api/projects/${projectId}`, {
@@ -147,10 +175,30 @@ function App() {
   }
 
   async function openFolder(projectId) {
+    if (hostedMode) {
+      const project = projects.find((candidate) => candidate.id === projectId);
+      await queueHostedCommand({
+        commandType: "open-path",
+        projectId,
+        target: project?.path || projectId,
+        reason: `Owner requested opening the local folder for ${project?.name || projectId} from hosted Ops.`,
+      });
+      return;
+    }
     await fetch(`/api/projects/${projectId}/open-folder`, { method: "POST" });
   }
 
   async function openProjectManagementFolder(projectId, fileKey = "") {
+    if (hostedMode) {
+      const project = projects.find((candidate) => candidate.id === projectId);
+      await queueHostedCommand({
+        commandType: "open-path",
+        projectId,
+        target: fileKey ? `${project?.path || projectId}\\docs\\project-management\\${fileKey}` : `${project?.path || projectId}\\docs\\project-management`,
+        reason: `Owner requested opening project-management ${fileKey ? "file" : "folder"} for ${project?.name || projectId} from hosted Ops.`,
+      });
+      return;
+    }
     const path = fileKey ? `open-project-management-file/${fileKey}` : "open-project-management-folder";
     await fetch(`/api/projects/${projectId}/${path}`, { method: "POST" });
   }
@@ -162,6 +210,7 @@ function App() {
   async function createPortfolioDraft(projectId) {
     const result = await runAction(projectId, "create-portfolio-draft");
     if (!result) return;
+    if (hostedMode) return;
     const projectLabel = result.createdProjectIdea ? "Created" : "Updated";
     const blogLabel = result.createdBlogPost ? "created" : "updated";
     const screenshotLabel = result.screenshotStatus === "captured"
@@ -178,6 +227,16 @@ function App() {
   }
 
   async function registerProject(values) {
+    if (hostedMode) {
+      await queueHostedCommand({
+        commandType: "register-project",
+        target: values.folderName || values.projectName || "new-project",
+        reason: `Owner requested new project registration for ${values.projectName || values.folderName || "new project"} from hosted Ops.`,
+        payload: values,
+      });
+      setShowRegister(false);
+      return null;
+    }
     setBusy("register");
     try {
       const project = await apiJson("/api/projects/register", {
@@ -235,6 +294,14 @@ function App() {
 
   async function openRidgeFabricPath(relativePath = "") {
     setActionError("");
+    if (hostedMode) {
+      await queueHostedCommand({
+        commandType: "open-path",
+        target: relativePath || "C:\\Development\\Shared\\ridge-fabric-registry",
+        reason: `Owner requested opening Ridge Fabric ${relativePath || "registry root"} from hosted Ops.`,
+      });
+      return;
+    }
     try {
       await apiJson("/api/ridge-fabric/open", {
         method: "POST",
@@ -247,6 +314,15 @@ function App() {
   }
 
   async function runProjectReview(projectId) {
+    if (hostedMode) {
+      const project = projects.find((candidate) => candidate.id === projectId);
+      return queueHostedCommand({
+        commandType: "project-review",
+        projectId,
+        target: project?.path || project?.name || projectId,
+        reason: `Owner requested read-only project review for ${project?.name || projectId} from hosted Ops.`,
+      });
+    }
     setBusy("project-review");
     setActionError("");
     setActionNotice("");
@@ -328,6 +404,15 @@ function App() {
     } finally {
       setBusy("");
     }
+  }
+
+  async function queueHostedCommand(values) {
+    const runner = activeLocalRunners[0] || localRunners[0];
+    return createLocalCommandRequest({
+      runnerId: runner?.id || "",
+      ...values,
+      requestedBy: "owner",
+    });
   }
 
   const filtered = useMemo(() => {

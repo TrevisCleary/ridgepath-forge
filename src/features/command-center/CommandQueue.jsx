@@ -8,6 +8,12 @@ const COMMAND_TYPES = [
   { value: "start-project", label: "Start project" },
   { value: "stop-project", label: "Stop project" },
   { value: "restart-project", label: "Restart project" },
+  { value: "take-over-project", label: "Take over project" },
+  { value: "git-sync", label: "Git sync" },
+  { value: "initialize-project-management", label: "Initialize PM" },
+  { value: "create-portfolio-draft", label: "Portfolio draft" },
+  { value: "register-project", label: "Register project" },
+  { value: "update-project-description", label: "Update description" },
   { value: "rustdesk-connect", label: "RustDesk connection" },
   { value: "open-path", label: "Open local path" },
 ];
