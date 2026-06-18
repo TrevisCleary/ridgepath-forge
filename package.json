@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm run server\" \"npm run client\" \"npm run redirect\"",
+    "dev": "concurrently \"node server/index.js\" \"vite --host 127.0.0.1 --port 3060\" \"node server/redirect.js\"",
     "server": "node server/index.js",
     "redirect": "node server/redirect.js",
     "client": "vite --host 127.0.0.1 --port 3060",

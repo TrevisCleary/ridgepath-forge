@@ -55,6 +55,14 @@ Use Add to Demo Portal from a selected project's Overview panel to create or upd
 
 When `DEMO_DATABASE_URL` or `DATABASE_URL` is set, Forge writes to the Neon-backed demo registry. Without a database URL, it writes to the RidgePath website fallback file at `data/demo-clients.local.json`.
 
+The client-facing portal route defaults to the production RidgePath path format:
+
+```text
+https://ridgepath.io/demos/<project-slug>
+```
+
+Localhost project URLs are not written as shareable demo URLs. If a project does not expose a production `homepage`, `productionUrl`, or `deploymentUrl`, Forge creates the portal route and marks the project deployment URL as needing review before sharing.
+
 Configure the Neon connection for the current PowerShell session:
 
 ```powershell
@@ -62,7 +70,7 @@ $env:DEMO_DATABASE_URL = "<neon-pooled-connection-string>"
 npm run dev
 ```
 
-The action stores a generated password hash, local path, repository URL, branch, latest commit, deployment/local URL, project phase, progress estimate, and update note. The generated client password is shown once in the success notice when a new record is created.
+The action stores a generated password hash, local path, repository URL, branch, latest commit, production deployment URL when available, project phase, progress estimate, and update note. The generated client password is shown once in the modal result when a new record is created.
 
 ## Project Registration
 

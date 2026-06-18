@@ -40,7 +40,7 @@ $launcherRoots = @(
     $_.ProcessId -ne $PID -and
     $_.CommandLine -and (
       $_.CommandLine -like "*$startScript*" -or
-      $_.CommandLine -like "*$repoRoot\node_modules*"
+      $_.CommandLine -like "*$repoRoot*"
     )
   }
 )
@@ -55,9 +55,18 @@ $listenerProcessIds = @(
     Select-Object -ExpandProperty OwningProcess -Unique
 )
 
-$targetProcessIds = @(
-  $listenerProcessIds | Where-Object { $launcherProcessIds.Contains([int] $_) }
-)
+$targetProcessIds = @($launcherProcessIds | ForEach-Object { [int] $_ })
+
+foreach ($processId in $listenerProcessIds) {
+  $listener = $allProcesses | Where-Object { [int] $_.ProcessId -eq [int] $processId } | Select-Object -First 1
+  if ($listener -and $listener.CommandLine -like "*$repoRoot*") {
+    $targetProcessIds += [int] $processId
+  } elseif ($listener -and $listener.CommandLine -like "*server/index.js*") {
+    $targetProcessIds += [int] $processId
+  }
+}
+
+$targetProcessIds = @($targetProcessIds | Where-Object { $_ -ne $PID } | Sort-Object -Unique)
 
 if ($targetProcessIds.Count -gt 0) {
   $targetProcessIds |
@@ -74,4 +83,46 @@ Start-Process -FilePath pwsh.exe `
   -WorkingDirectory $repoRoot `
   -WindowStyle Hidden
 
+function Wait-ForHttpStatus {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $Uri,
+
+    [int] $TimeoutSeconds = 20,
+
+    [int] $RequiredSuccesses = 3
+  )
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  $successes = 0
+  $lastStatus = $null
+  do {
+    try {
+      $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 3
+      $lastStatus = [int] $response.StatusCode
+      if ($lastStatus -ge 200 -and $lastStatus -lt 400) {
+        $successes += 1
+        if ($successes -ge $RequiredSuccesses) {
+          return $lastStatus
+        }
+      } else {
+        $successes = 0
+      }
+    } catch {
+      $lastStatus = $null
+      Start-Sleep -Milliseconds 700
+    }
+    Start-Sleep -Milliseconds 700
+  } while ((Get-Date) -lt $deadline)
+
+  return $lastStatus
+}
+
+$apiStatus = Wait-ForHttpStatus -Uri "http://127.0.0.1:3059/api/health" -RequiredSuccesses 3
+$uiStatus = Wait-ForHttpStatus -Uri "http://127.0.0.1:3060" -RequiredSuccesses 2
+$apiLabel = if ($null -ne $apiStatus) { $apiStatus } else { "not ready" }
+$uiLabel = if ($null -ne $uiStatus) { $uiStatus } else { "not ready" }
+
 Write-Host "RidgePath Forge restart requested from '$repoRoot'."
+Write-Host "API 3059: $apiLabel"
+Write-Host "UI 3060: $uiLabel"

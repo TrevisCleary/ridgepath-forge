@@ -5,4 +5,9 @@ data/project-overrides.json
 data/project-registry.json
 data/activity-log.json
 dashboard-preview.png
+*-verification.png
+data/command-center/
 npm-debug.log*
+.env
+.env.*
+!.env.example

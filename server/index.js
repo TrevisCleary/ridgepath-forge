@@ -7,6 +7,20 @@ import crypto from "node:crypto";
 import { neon } from "@neondatabase/serverless";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import {
+  deleteRidgeFabricDevice as deleteRidgeFabricDeviceRecord,
+  resolveRegistryPath,
+  ridgeFabricRegistry as readRidgeFabricRegistry,
+  updateRidgeFabricDevice as updateRidgeFabricDeviceRecord,
+} from "./domains/ridge-fabric/repository.js";
+import {
+  commandCenterStatus,
+  createProjectReviewRun,
+  listAgentRuns,
+  listApprovalEvents,
+  listProposals,
+  updateProposal,
+} from "./domains/command-center/repository.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.resolve(__dirname, "..");
@@ -132,7 +146,7 @@ const DEFAULT_SETTINGS = {
   demoPortalIntegration: {
     root: "C:\\Development\\Projects\\ridgepath-technologies-website",
     clientsFile: "data/demo-clients.local.json",
-    publicBaseUrl: "http://localhost:3203/demos",
+    publicBaseUrl: "https://ridgepath.io/demos",
     passwordLength: 18,
     defaultExpiryDays: 45,
   },
@@ -149,6 +163,14 @@ app.use(express.json());
 
 function slug(value) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+function demoSlug(value, fallback = "client-demo") {
+  return slug(String(value || fallback)).slice(0, 80) || fallback;
+}
+
+function validEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
 }
 
 function escapeHtml(value) {
@@ -799,6 +821,25 @@ function isHttpUrl(value = "") {
   }
 }
 
+function isLocalHostName(hostname = "") {
+  const host = hostname.toLowerCase();
+  if (["localhost", "127.0.0.1", "::1", "0.0.0.0"].includes(host)) return true;
+  if (host.endsWith(".local")) return true;
+  if (/^192\.168\./.test(host)) return true;
+  if (/^10\./.test(host)) return true;
+  const private172 = host.match(/^172\.(\d+)\./);
+  return private172 ? Number(private172[1]) >= 16 && Number(private172[1]) <= 31 : false;
+}
+
+function isProductionHttpUrl(value = "") {
+  try {
+    const url = new URL(String(value));
+    return url.protocol === "https:" && !isLocalHostName(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function liveProjectUrl(pkg = {}, override = {}) {
   const candidates = [
     override.liveUrl,
@@ -808,6 +849,22 @@ function liveProjectUrl(pkg = {}, override = {}) {
     pkg.liveUrl,
   ];
   return candidates.find((candidate) => isHttpUrl(candidate)) || "";
+}
+
+function productionProjectUrl(pkg = {}, override = {}) {
+  const candidates = [
+    override.productionUrl,
+    override.deploymentUrl,
+    override.publicUrl,
+    pkg.productionUrl,
+    pkg.deploymentUrl,
+    pkg.homepage,
+    pkg.liveUrl,
+    override.liveUrl,
+    override.externalUrl,
+    override.url,
+  ];
+  return candidates.find((candidate) => isProductionHttpUrl(candidate)) || "";
 }
 
 function portfolioIntegrationSettings(settings) {
@@ -825,6 +882,7 @@ function demoPortalIntegrationSettings(settings) {
     ...DEFAULT_SETTINGS.demoPortalIntegration,
     ...configured,
     root: path.resolve(process.env.DEMO_PORTAL_PROJECT_ROOT || configured.root || DEFAULT_SETTINGS.demoPortalIntegration.root),
+    publicBaseUrl: process.env.DEMO_PORTAL_PUBLIC_BASE_URL || configured.publicBaseUrl || DEFAULT_SETTINGS.demoPortalIntegration.publicBaseUrl,
   };
 }
 
@@ -1400,15 +1458,137 @@ function demoPortalPublicUrl(settings, slugValue) {
   return `${base}/${slugValue}`;
 }
 
+function demoPortalDeepLink(settings, clientSlug, siteSlug = "") {
+  const url = demoPortalPublicUrl(settings, clientSlug);
+  return siteSlug ? `${url}?site=${encodeURIComponent(siteSlug)}` : url;
+}
+
+function demoPortalConfigDefaults(project, demoPortal = DEFAULT_SETTINGS.demoPortalIntegration) {
+  const clientSlug = demoSlug(project.id);
+  const siteSlug = demoSlug(project.folderName || project.id);
+  const dashboard = project.projectManagement?.dashboard || {};
+  const summary = dashboard.summary || {};
+  return {
+    clientName: displayProjectTitle(project),
+    clientSlug,
+    clientEmail: "",
+    organizationName: "",
+    siteTitle: displayProjectTitle(project),
+    siteSlug,
+    projectStatus: project.productionUrl ? "Production demo linked" : "Needs production deployment URL",
+    projectPhase: sentence(summary.currentPhase, "Needs review"),
+    progress: demoProgressFromDashboard(project),
+    updateMessage: sentence(
+      summary.nextCodexAction,
+      `${displayProjectTitle(project)} was linked to the RidgePath demo portal from Forge.`,
+    ),
+    active: true,
+    publicDemoUrl: demoPortalPublicUrl(demoPortal, clientSlug),
+    deepLink: demoPortalDeepLink(demoPortal, clientSlug, siteSlug),
+  };
+}
+
+function normalizeDemoPortalConfig(project, demoPortal, input = {}, existing = null) {
+  const defaults = demoPortalConfigDefaults(project, demoPortal);
+  const clientSlug = demoSlug(input.clientSlug || existing?.slug || defaults.clientSlug);
+  const siteSlug = demoSlug(input.siteSlug || defaults.siteSlug);
+  const clientEmail = String(input.clientEmail || existing?.client_email || existing?.clientEmail || "").trim();
+  if (clientEmail && !validEmail(clientEmail)) {
+    throw new Error("Enter a valid client email address.");
+  }
+  const progress = Math.max(0, Math.min(100, Number(input.progress ?? defaults.progress) || 0));
+  const active = input.active === undefined ? true : Boolean(input.active);
+  return {
+    clientName: sentence(input.clientName || existing?.client_name || existing?.clientName, defaults.clientName),
+    clientSlug,
+    clientEmail,
+    organizationName: String(input.organizationName || existing?.organization_name || existing?.organizationName || "").trim(),
+    siteTitle: sentence(input.siteTitle, defaults.siteTitle),
+    siteSlug,
+    projectStatus: sentence(input.projectStatus, defaults.projectStatus),
+    projectPhase: sentence(input.projectPhase, defaults.projectPhase),
+    progress,
+    updateMessage: sentence(input.updateMessage, defaults.updateMessage),
+    active,
+    publicDemoUrl: demoPortalPublicUrl(demoPortal, clientSlug),
+    deepLink: demoPortalDeepLink(demoPortal, clientSlug, siteSlug),
+  };
+}
+
+function demoEmailDraft(config, generatedPassword = "") {
+  const greeting = config.clientName ? `Hi ${config.clientName},` : "Hi,";
+  const credentialLine = generatedPassword
+    ? `Temporary password: ${generatedPassword}`
+    : "Use your existing RidgePath demo portal password. If you need a reset, reply to this email.";
+  const subject = `Your RidgePath demo workspace is ready`;
+  const body = [
+    greeting,
+    "",
+    "Your RidgePath demo workspace is ready for review.",
+    "",
+    `Workspace link: ${config.deepLink || config.publicDemoUrl}`,
+    credentialLine,
+    "",
+    "This link opens your client-facing project workspace where demo sites, status, and updates are collected.",
+    "",
+    "Thank you,",
+    "RidgePath Technologies",
+  ].join("\n");
+  return { to: config.clientEmail, subject, body };
+}
+
+async function sendDemoPortalEmail(draft) {
+  const apiKey = process.env.RESEND_API_KEY || process.env.DEMO_EMAIL_API_KEY || "";
+  const from = process.env.DEMO_EMAIL_FROM || "RidgePath Technologies <demos@ridgepath.io>";
+  if (!apiKey) {
+    return {
+      sent: false,
+      configured: false,
+      message: "Email sending is not configured. Copy the draft instead.",
+    };
+  }
+  if (!draft.to || !validEmail(draft.to)) {
+    return {
+      sent: false,
+      configured: true,
+      message: "A valid client email is required before sending.",
+    };
+  }
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from,
+      to: [draft.to],
+      subject: draft.subject,
+      text: draft.body,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.message || "Email provider rejected the demo portal message.");
+  }
+  return {
+    sent: true,
+    configured: true,
+    provider: "resend",
+    id: payload?.id || "",
+    message: "Connection email sent.",
+  };
+}
+
 function projectRepositoryUrl(project) {
   if (isHttpUrl(project.origin)) return project.origin.replace(/\.git$/i, "");
   return project.origin?.replace(/^git@github\.com:/i, "https://github.com/").replace(/\.git$/i, "") || "";
 }
 
-function projectDemoSiteUrl(project) {
-  if (isHttpUrl(project.liveUrl)) return project.liveUrl;
-  const localUrl = portfolioPrimaryUrl(project);
-  return localUrl || "";
+function projectDemoSiteUrl(project, publicDemoUrl = "") {
+  if (isProductionHttpUrl(project.productionUrl)) return project.productionUrl;
+  if (isProductionHttpUrl(project.liveUrl)) return project.liveUrl;
+  return publicDemoUrl;
 }
 
 function demoProgressFromDashboard(project) {
@@ -1462,6 +1642,11 @@ function mergeDemoUpdate(existingUpdates, update) {
   return [update, ...updates].slice(0, 12);
 }
 
+function serializableDemoClientRecord(record) {
+  const { existingClient, existing_client, ...publicRecord } = record;
+  return publicRecord;
+}
+
 function demoPortalDatabaseUrl() {
   return process.env.DEMO_DATABASE_URL || process.env.DATABASE_URL || "";
 }
@@ -1501,6 +1686,12 @@ async function upsertDemoPortalDatabaseRecord(project, demoPortal, record, site,
       latest_commit,
       deployment_url,
       public_demo_url,
+      client_email,
+      organization_name,
+      invite_token_hash,
+      invite_expires_at,
+      last_invite_sent_at,
+      access_reset_at,
       expires_at,
       linked_from_forge_at,
       updated_at
@@ -1517,6 +1708,12 @@ async function upsertDemoPortalDatabaseRecord(project, demoPortal, record, site,
       ${record.latestCommit},
       ${record.deploymentUrl},
       ${record.publicDemoUrl},
+      ${record.clientEmail},
+      ${record.organizationName},
+      ${record.inviteTokenHash},
+      ${record.inviteExpiresAt},
+      ${record.lastInviteSentAt},
+      ${record.accessResetAt},
       ${record.expiresAt},
       ${record.linkedFromForgeAt},
       now()
@@ -1525,13 +1722,22 @@ async function upsertDemoPortalDatabaseRecord(project, demoPortal, record, site,
       source_project_id = excluded.source_project_id,
       client_name = excluded.client_name,
       status = excluded.status,
-      password_hash = coalesce(demo_clients.password_hash, excluded.password_hash),
+      password_hash = case
+        when ${Boolean(record.forcePasswordUpdate)} then excluded.password_hash
+        else coalesce(demo_clients.password_hash, excluded.password_hash)
+      end,
       local_path = excluded.local_path,
       repository_url = excluded.repository_url,
       branch = excluded.branch,
       latest_commit = excluded.latest_commit,
       deployment_url = excluded.deployment_url,
       public_demo_url = excluded.public_demo_url,
+      client_email = excluded.client_email,
+      organization_name = excluded.organization_name,
+      invite_token_hash = coalesce(excluded.invite_token_hash, demo_clients.invite_token_hash),
+      invite_expires_at = coalesce(excluded.invite_expires_at, demo_clients.invite_expires_at),
+      last_invite_sent_at = coalesce(excluded.last_invite_sent_at, demo_clients.last_invite_sent_at),
+      access_reset_at = coalesce(excluded.access_reset_at, demo_clients.access_reset_at),
       expires_at = coalesce(demo_clients.expires_at, excluded.expires_at),
       linked_from_forge_at = excluded.linked_from_forge_at,
       updated_at = now()
@@ -1622,66 +1828,126 @@ async function upsertDemoPortalDatabaseRecord(project, demoPortal, record, site,
     generatedPassword,
     registryPath: "Neon database",
     clientSlug: record.slug,
-    clientName: record.clientName,
-    publicDemoUrl: record.publicDemoUrl,
-    siteUrl: record.deploymentUrl,
-    expiresAt: record.expiresAt,
+      clientName: record.clientName,
+      clientEmail: record.clientEmail,
+      organizationName: record.organizationName,
+      publicDemoUrl: record.publicDemoUrl,
+      deepLink: record.deepLink,
+      siteUrl: site.url,
+      deploymentUrl: record.deploymentUrl,
+      productionReady: Boolean(record.deploymentUrl),
+      expiresAt: record.expiresAt,
+      emailDraft: demoEmailDraft(record, generatedPassword),
   };
 }
 
-async function linkProjectToDemoPortal(project) {
+async function demoPortalExistingRecord(project, demoPortal, requestedSlug = "") {
   const settings = await launcherSettings();
-  const demoPortal = demoPortalIntegrationSettings(settings);
+  const resolvedDemoPortal = demoPortal || demoPortalIntegrationSettings(settings);
   const sql = demoPortalDb();
-  const registryPath = path.join(demoPortal.root, normalizeRelativePath(demoPortal.clientsFile));
-  if (!(await pathExists(demoPortal.root))) {
-    throw new Error(`Demo portal project root does not exist: ${demoPortal.root}`);
+  const slugValue = demoSlug(requestedSlug || project.id);
+  const registryPath = path.join(resolvedDemoPortal.root, normalizeRelativePath(resolvedDemoPortal.clientsFile));
+  if (!(await pathExists(resolvedDemoPortal.root))) {
+    throw new Error(`Demo portal project root does not exist: ${resolvedDemoPortal.root}`);
   }
-
-  const now = new Date();
-  const timestamp = now.toISOString();
-  const slugValue = project.id;
   const clients = sql ? [] : await readJson(registryPath, []);
   if (!sql && !Array.isArray(clients)) {
     throw new Error(`Demo portal registry must contain a JSON array: ${registryPath}`);
   }
   const existingIndex = sql ? -1 : clients.findIndex((client) => client?.slug === slugValue || client?.sourceProjectId === project.id);
   const existing = sql ? await existingDemoClientFromDb(sql, project.id, slugValue) : existingIndex >= 0 ? clients[existingIndex] : null;
+  return { sql, registryPath, clients, existingIndex, existing };
+}
+
+async function demoPortalConfiguration(project) {
+  const settings = await launcherSettings();
+  const demoPortal = demoPortalIntegrationSettings(settings);
+  const { sql, existing } = await demoPortalExistingRecord(project, demoPortal);
+  const defaults = demoPortalConfigDefaults(project, demoPortal);
+  const config = normalizeDemoPortalConfig(project, demoPortal, {}, existing);
+  return {
+    ok: true,
+    storage: sql ? "neon" : "local-json",
+    emailConfigured: Boolean(process.env.RESEND_API_KEY || process.env.DEMO_EMAIL_API_KEY),
+    project: {
+      id: project.id,
+      name: displayProjectTitle(project),
+      path: project.path,
+      repositoryUrl: projectRepositoryUrl(project),
+      branch: project.git?.branch || "",
+      productionUrl: isProductionHttpUrl(project.productionUrl) ? project.productionUrl : "",
+      liveUrl: project.liveUrl || "",
+    },
+    defaults,
+    config,
+    existing: existing ? {
+      clientSlug: existing.slug,
+      clientName: existing.clientName || existing.client_name,
+      clientEmail: existing.clientEmail || existing.client_email || "",
+      organizationName: existing.organizationName || existing.organization_name || "",
+      publicDemoUrl: existing.publicDemoUrl || existing.public_demo_url || config.publicDemoUrl,
+      lastInviteSentAt: existing.lastInviteSentAt || existing.last_invite_sent_at || "",
+      accessResetAt: existing.accessResetAt || existing.access_reset_at || "",
+    } : null,
+    emailDraft: demoEmailDraft(config),
+  };
+}
+
+async function linkProjectToDemoPortal(project, input = {}, options = {}) {
+  const settings = await launcherSettings();
+  const demoPortal = demoPortalIntegrationSettings(settings);
+  const { sql, registryPath, clients, existingIndex, existing } = await demoPortalExistingRecord(project, demoPortal, input.clientSlug);
+
+  const now = new Date();
+  const timestamp = now.toISOString();
+  const config = normalizeDemoPortalConfig(project, demoPortal, input, existing);
   const existingPasswordHash = existing?.passwordHash || existing?.password_hash || "";
-  const generatedPassword = existingPasswordHash ? "" : generateDemoPassword(demoPortal.passwordLength);
+  const shouldResetAccess = Boolean(options.resetAccess || input.resetAccess);
+  const generatedPassword = existingPasswordHash && !shouldResetAccess ? "" : generateDemoPassword(demoPortal.passwordLength);
   const passwordHash = existingPasswordHash || hashDemoPassword(generatedPassword);
-  const siteUrl = projectDemoSiteUrl(project);
-  const dashboard = project.projectManagement?.dashboard || {};
-  const summary = dashboard.summary || {};
+  const resolvedPasswordHash = shouldResetAccess && generatedPassword ? hashDemoPassword(generatedPassword) : passwordHash;
+  const productionDeploymentUrl = isProductionHttpUrl(project.productionUrl) ? project.productionUrl : "";
   const expiry = existing?.expiresAt || existing?.expires_at || new Date(now.getTime() + (Number(demoPortal.defaultExpiryDays || 45) * 24 * 60 * 60 * 1000)).toISOString();
   const site = {
-    id: project.id,
-    title: displayProjectTitle(project),
+    id: config.siteSlug,
+    title: config.siteTitle,
     description: sentence(project.description, "Current website demo linked from RidgePath Forge."),
-    url: siteUrl,
-    phase: sentence(summary.currentPhase, "Needs review"),
-    status: project.status === "running" ? "Active local demo" : "Linked",
-    progress: demoProgressFromDashboard(project),
+    url: projectDemoSiteUrl(project, config.publicDemoUrl),
+    phase: config.projectPhase,
+    status: config.projectStatus,
+    progress: config.progress,
     lastUpdated: timestamp.slice(0, 10),
   };
-  const update = demoUpdateForProject(project, timestamp);
+  const update = {
+    ...demoUpdateForProject(project, timestamp),
+    summary: config.updateMessage,
+    status: config.projectPhase,
+  };
   const record = {
     ...existing,
     existingClient: existing,
-    slug: existing?.slug || slugValue,
+    slug: config.clientSlug,
     sourceProjectId: project.id,
-    clientName: existing?.clientName || existing?.client_name || displayProjectTitle(project),
-    status: existing?.status || "active",
-    passwordHash,
+    clientName: config.clientName,
+    clientEmail: config.clientEmail,
+    organizationName: config.organizationName,
+    status: config.active ? "active" : "inactive",
+    passwordHash: resolvedPasswordHash,
+    forcePasswordUpdate: shouldResetAccess,
     localPath: project.path,
     repositoryUrl: projectRepositoryUrl(project),
     branch: project.git?.branch || existing?.branch || "",
     latestCommit: await runCapture("git.exe", ["rev-parse", "--short", "HEAD"], project.path),
-    deploymentUrl: siteUrl,
-    publicDemoUrl: demoPortalPublicUrl(demoPortal, slugValue),
+    deploymentUrl: productionDeploymentUrl,
+    publicDemoUrl: config.publicDemoUrl,
+    deepLink: config.deepLink,
     expiresAt: expiry,
     sites: mergeDemoSite(existing?.sites, site),
     updates: mergeDemoUpdate(existing?.updates, update),
+    inviteTokenHash: existing?.inviteTokenHash || existing?.invite_token_hash || "",
+    inviteExpiresAt: existing?.inviteExpiresAt || existing?.invite_expires_at || null,
+    lastInviteSentAt: input.markInviteSent ? timestamp : (existing?.lastInviteSentAt || existing?.last_invite_sent_at || null),
+    accessResetAt: shouldResetAccess ? timestamp : (existing?.accessResetAt || existing?.access_reset_at || null),
     linkedFromForgeAt: timestamp,
   };
 
@@ -1689,8 +1955,9 @@ async function linkProjectToDemoPortal(project) {
     return upsertDemoPortalDatabaseRecord(project, demoPortal, record, site, update, generatedPassword);
   }
 
-  if (existingIndex >= 0) clients[existingIndex] = record;
-  else clients.push(record);
+  const persistedRecord = serializableDemoClientRecord(record);
+  if (existingIndex >= 0) clients[existingIndex] = persistedRecord;
+  else clients.push(persistedRecord);
 
   await writeJson(registryPath, clients);
   await appendActivity(
@@ -1715,9 +1982,41 @@ async function linkProjectToDemoPortal(project) {
     registryPath,
     clientSlug: record.slug,
     clientName: record.clientName,
+    clientEmail: record.clientEmail,
+    organizationName: record.organizationName,
     publicDemoUrl: record.publicDemoUrl,
-    siteUrl,
+    deepLink: record.deepLink,
+    siteUrl: site.url,
+    deploymentUrl: record.deploymentUrl,
+    productionReady: Boolean(productionDeploymentUrl),
     expiresAt: record.expiresAt,
+    emailDraft: demoEmailDraft(record, generatedPassword),
+  };
+}
+
+async function resetDemoPortalAccess(project, input = {}) {
+  return linkProjectToDemoPortal(project, input, { resetAccess: true });
+}
+
+async function sendDemoPortalConnectionLink(project, input = {}) {
+  const result = await linkProjectToDemoPortal(project, { ...input, markInviteSent: true });
+  const draft = demoEmailDraft(result, "");
+  const email = await sendDemoPortalEmail(draft);
+  await appendActivity(
+    project.id,
+    "demo-portal-send-link",
+    email.sent ? "Sent RidgePath demo portal connection link" : "Prepared RidgePath demo portal connection link draft",
+    {
+      clientSlug: result.clientSlug,
+      clientEmail: result.clientEmail,
+      sent: email.sent,
+      configured: email.configured,
+    },
+  );
+  return {
+    ...result,
+    email,
+    emailDraft: draft,
   };
 }
 
@@ -1932,6 +2231,8 @@ async function discoverProjects() {
   const settings = await launcherSettings();
   const entries = await fs.readdir(PROJECTS_ROOT, { withFileTypes: true });
   const overrides = await readJson(OVERRIDES_FILE, {});
+  const registryEntries = await readJson(REGISTRY_FILE, []);
+  const registryById = new Map((Array.isArray(registryEntries) ? registryEntries : []).map((item) => [item.id, item]));
   const projects = [];
 
   for (const entry of entries.filter((item) => item.isDirectory() && !item.name.startsWith("."))) {
@@ -1942,6 +2243,7 @@ async function discoverProjects() {
     const origin = gitOrigin(projectPath);
     const id = slug(entry.name);
     const override = overrides[id] || {};
+    const registryEntry = registryById.get(id) || {};
     const services = [];
 
     if (!pkg) {
@@ -1954,8 +2256,11 @@ async function discoverProjects() {
         origin,
         owner: githubOwner(origin),
         audience: override.audience || projectAudience(origin),
+        bootstrap: registryEntry.bootstrap || {},
+        registeredAt: registryEntry.createdAt || "",
         framework: "Unknown",
         liveUrl: liveProjectUrl({}, override),
+        productionUrl: productionProjectUrl({}, override),
         faviconUrl: "",
         services,
         scripts: {},
@@ -1997,8 +2302,11 @@ async function discoverProjects() {
       origin,
       owner: githubOwner(origin),
       audience: override.audience || projectAudience(origin),
+      bootstrap: registryEntry.bootstrap || {},
+      registeredAt: registryEntry.createdAt || "",
       framework,
       liveUrl: liveProjectUrl(pkg, override),
+      productionUrl: productionProjectUrl(pkg, override),
       packageManager: pkg.packageManager || "npm",
       faviconUrl: favicon ? `/api/projects/${id}/favicon?path=${encodeURIComponent(favicon)}` : "",
       services,
@@ -2147,6 +2455,8 @@ function registrationTemplateValues({
     HOSTING_PLATFORM: bootstrap.hostingPlatform || "N/A",
     HOSTING_LABEL: hostingLabel,
     PACKAGE_MANAGER: bootstrap.packageManager,
+    PROJECT_CONTEXT: bootstrap.projectContext || "Needs manual review",
+    KEY_FEATURES: bootstrap.keyFeatures || "Needs manual review",
     CREATE_STANDARD_DOCUMENTATION: yesNo(bootstrap.createStandardDocumentation),
     CREATE_GOVERNANCE_ASSETS: yesNo(bootstrap.createGovernanceAssets),
     CREATE_PROJECT_SOURCE_STRUCTURE: "Yes",
@@ -2338,6 +2648,15 @@ http.createServer((req, res) => {
 `;
 }
 
+function formatFeatureList(value) {
+  const lines = String(value || "")
+    .split(/\r?\n|;/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return "- Needs manual review.";
+  return lines.map((line) => `- ${line.replace(/^[-*]\s*/, "")}`).join("\n");
+}
+
 async function createRegisteredProject({
   name,
   audience = "personal",
@@ -2349,6 +2668,8 @@ async function createRegisteredProject({
   hostingStrategy = "Vercel",
   hostingPlatform = "",
   packageManager = "npm",
+  projectContext = "",
+  keyFeatures = "",
   createStandardDocumentation = true,
   createGovernanceAssets = true,
 }) {
@@ -2377,6 +2698,8 @@ async function createRegisteredProject({
     hostingStrategy: String(hostingStrategy || "Vercel").trim(),
     hostingPlatform: String(hostingPlatform || "").trim(),
     packageManager: String(packageManager || "npm").trim(),
+    projectContext: String(projectContext || "").trim(),
+    keyFeatures: String(keyFeatures || "").trim(),
     createStandardDocumentation: Boolean(createStandardDocumentation),
     createGovernanceAssets: Boolean(createGovernanceAssets),
   };
@@ -2409,7 +2732,7 @@ async function createRegisteredProject({
     },
   }, null, 2)}\n`);
   await fs.writeFile(path.join(projectPath, "server.js"), registeredProjectServerSource(projectName, assignedPort));
-  await fs.writeFile(path.join(projectPath, "README.md"), `# ${projectName}\n\nRegistered by RidgePath Forge on port ${assignedPort}.\n\n## Bootstrap Snapshot\n\n- Application Classification: ${bootstrap.applicationClassification}\n- Technology Stack: ${bootstrap.technologyStack}\n- Repository: ${bootstrap.repositoryOwner}/${folderName} (${bootstrap.repositoryVisibility})\n- Hosting: ${hostingLabel}\n- Package Manager: ${bootstrap.packageManager}\n\n## Website Baseline\n\n- Starter runtime includes a custom 404 response that shares the same visual theme as the home page.\n- For website projects, keep the custom 404 aligned with the final site theme and include it in review evidence before release.\n\nThis project is registered only. Start it from RidgePath Forge when you are ready.\n`);
+  await fs.writeFile(path.join(projectPath, "README.md"), `# ${projectName}\n\nRegistered by RidgePath Forge on port ${assignedPort}.\n\n## Bootstrap Snapshot\n\n- Application Classification: ${bootstrap.applicationClassification}\n- Technology Stack: ${bootstrap.technologyStack}\n- Repository: ${bootstrap.repositoryOwner}/${folderName} (${bootstrap.repositoryVisibility})\n- Hosting: ${hostingLabel}\n- Package Manager: ${bootstrap.packageManager}\n\n## Project Context\n\n${bootstrap.projectContext || "Needs manual review."}\n\n## Key Features\n\n${formatFeatureList(bootstrap.keyFeatures)}\n\n## Website Baseline\n\n- Starter runtime includes a custom 404 response that shares the same visual theme as the home page.\n- For website projects, keep the custom 404 aligned with the final site theme and include it in review evidence before release.\n\nThis project is registered only. Start it from RidgePath Forge when you are ready.\n`);
   await writeRenderedTemplate(settings, "bootstrapConfig", path.join(projectPath, "bootstrap-config.md"), templateValues);
   await writeRenderedTemplate(settings, "projectInitiation", path.join(projectPath, "project-initiation.md"), templateValues);
   await writeRenderedTemplate(settings, "launcherHandoff", path.join(projectPath, "docs", "launcher-handoff.md"), templateValues);
@@ -2481,6 +2804,92 @@ app.get("/api/ports/suggestions", async (_req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true, service: "ridgepath-forge-api" });
+});
+
+app.get("/api/command-center/status", async (_req, res) => {
+  try {
+    res.json(await commandCenterStatus());
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/agent-runs", async (_req, res) => {
+  try {
+    res.json({ runs: await listAgentRuns() });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/agent-runs/project-review", async (req, res) => {
+  try {
+    const projectId = req.body?.projectId || req.query.projectId;
+    if (!projectId) return res.status(400).json({ error: "projectId is required." });
+    const project = await findProject(projectId);
+    if (!project) return res.status(404).json({ error: "Project not found." });
+    res.json(await createProjectReviewRun(project));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get("/api/proposals", async (_req, res) => {
+  try {
+    res.json({
+      proposals: await listProposals(),
+      approvalEvents: await listApprovalEvents(),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch("/api/proposals/:proposalId", async (req, res) => {
+  try {
+    res.json(await updateProposal(req.params.proposalId, req.body || {}));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get("/api/ridge-fabric", async (_req, res) => {
+  try {
+    res.json(await readRidgeFabricRegistry());
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch("/api/ridge-fabric/devices/:stableIdentifier", async (req, res) => {
+  try {
+    res.json(await updateRidgeFabricDeviceRecord(req.params.stableIdentifier, req.body || {}));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete("/api/ridge-fabric/devices/:stableIdentifier", async (req, res) => {
+  try {
+    res.json(await deleteRidgeFabricDeviceRecord(req.params.stableIdentifier));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/ridge-fabric/open", async (req, res) => {
+  try {
+    const target = resolveRegistryPath(req.body?.relativePath || "");
+    if (!(await pathExists(target))) return res.status(404).json({ error: "Registry path does not exist." });
+    spawn("explorer.exe", [target], { windowsHide: true, detached: true });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 });
 
@@ -2582,11 +2991,51 @@ app.post("/api/projects/:projectId/create-portfolio-draft", async (req, res) => 
   }
 });
 
+app.get("/api/projects/:projectId/demo-portal-config", async (req, res) => {
+  try {
+    const project = await findProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: "Project not found." });
+    res.json(await demoPortalConfiguration(project));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/projects/:projectId/demo-portal-config", async (req, res) => {
+  try {
+    const project = await findProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: "Project not found." });
+    res.json(await linkProjectToDemoPortal(project, req.body || {}));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/projects/:projectId/demo-portal-reset-access", async (req, res) => {
+  try {
+    const project = await findProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: "Project not found." });
+    res.json(await resetDemoPortalAccess(project, req.body || {}));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/projects/:projectId/demo-portal-send-link", async (req, res) => {
+  try {
+    const project = await findProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: "Project not found." });
+    res.json(await sendDemoPortalConnectionLink(project, req.body || {}));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 app.post("/api/projects/:projectId/link-demo-portal", async (req, res) => {
   try {
     const project = await findProject(req.params.projectId);
     if (!project) return res.status(404).json({ error: "Project not found." });
-    res.json(await linkProjectToDemoPortal(project));
+    res.json(await linkProjectToDemoPortal(project, req.body || {}));
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

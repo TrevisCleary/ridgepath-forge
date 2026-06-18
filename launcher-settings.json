@@ -113,5 +113,12 @@
       "scripts",
       "tests"
     ]
+  },
+  "demoPortalIntegration": {
+    "root": "C:\\Development\\Projects\\ridgepath-technologies-website",
+    "clientsFile": "data/demo-clients.local.json",
+    "publicBaseUrl": "https://ridgepath.io/demos",
+    "passwordLength": 18,
+    "defaultExpiryDays": 45
   }
 }
