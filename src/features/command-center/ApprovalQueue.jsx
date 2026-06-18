@@ -23,6 +23,7 @@ export function ApprovalQueue({
   const [selectedProjectId, setSelectedProjectId] = useState(projects[0]?.id || "");
   const [feedbackDrafts, setFeedbackDrafts] = useState({});
   const [branchPolicies, setBranchPolicies] = useState({});
+  const [copiedPacketId, setCopiedPacketId] = useState("");
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const packetByProposalId = useMemo(
     () => new Map(executionPackets.map((packet) => [packet.proposalId, packet])),
@@ -91,6 +92,12 @@ export function ApprovalQueue({
             comment: feedback,
             targetBranchPolicy: branchPolicy,
           });
+          const copyPacketPrompt = async () => {
+            if (!packet) return;
+            await navigator.clipboard.writeText(buildExecutionPrompt(packet, project));
+            setCopiedPacketId(packet.id);
+            window.setTimeout(() => setCopiedPacketId((current) => current === packet.id ? "" : current), 1800);
+          };
           return (
             <article className="approval-card" key={proposal.id}>
               <div className="approval-card-main">
@@ -149,6 +156,12 @@ export function ApprovalQueue({
                   <MessageSquareText size={15} />
                   Save Feedback
                 </button>
+                {packet ? (
+                  <button type="button" disabled={busy === proposal.id} onClick={copyPacketPrompt}>
+                    <ClipboardCheck size={15} />
+                    {copiedPacketId === packet.id ? "Copied Prompt" : "Copy Prompt"}
+                  </button>
+                ) : null}
                 {STATUS_OPTIONS.map((option) => (
                   <button key={option.status} className={option.status === "approved" ? "primary-secondary" : ""} type="button" disabled={busy === proposal.id} onClick={() => submitDecision(option)}>
                     {option.icon}
@@ -175,4 +188,38 @@ function formatTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function buildExecutionPrompt(packet, project) {
+  const constraints = packet.constraints?.length
+    ? packet.constraints.map((item) => `- ${item}`).join("\n")
+    : "- No additional constraints were captured.";
+  const projectPath = project?.path || "";
+  return [
+    "You are Codex acting on an owner-approved RidgePath Forge execution packet.",
+    "",
+    "Treat the packet as approved scope, but inspect the repository before editing. Do not expand the scope beyond the packet constraints.",
+    "",
+    `Packet ID: ${packet.id}`,
+    `Proposal ID: ${packet.proposalId}`,
+    `Project: ${project?.name || packet.projectId || "Unassigned project"}`,
+    `Project ID: ${packet.projectId || "unassigned"}`,
+    projectPath ? `Local path: ${projectPath}` : "Local path: not available from the hosted catalog",
+    `Branch policy: ${packet.branchPolicy}`,
+    packet.branchName ? `Requested branch name: ${packet.branchName}` : "Requested branch name: create one that matches the branch policy and objective",
+    "",
+    "Objective:",
+    packet.objective,
+    "",
+    "Constraints and owner direction:",
+    constraints,
+    "",
+    "Implementation rules:",
+    "- Verify the current branch and dirty worktree before editing.",
+    "- Use a feature branch unless the packet branch policy explicitly allows the active branch or direct main.",
+    "- Keep edits tightly scoped to the packet objective.",
+    "- Run the relevant build, tests, or smoke checks.",
+    "- Do not push to main or deploy unless the packet branch policy explicitly permits it.",
+    "- When complete, update the execution packet status and validation result in Forge/Neon.",
+  ].join("\n");
 }
