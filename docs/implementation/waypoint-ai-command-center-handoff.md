@@ -188,6 +188,7 @@ Current runner behavior:
 - `npm.cmd run runner:start` runs the heartbeat loop every 60 seconds.
 - `npm.cmd run runner:queue` writes a heartbeat and reads approved queued commands once.
 - `npm.cmd run runner:queue:start` watches approved queued commands every `RIDGEPATH_RUNNER_QUEUE_SECONDS` seconds, defaulting to 60.
+- `npm.cmd run runner:sync-projects` reads the local Forge API and publishes the hosted project catalog into Neon.
 - The runner loads `.env.local` or `.env` and uses `COMMAND_CENTER_DATABASE_URL`.
 - Runner identity defaults to the Windows hostname and can be overridden with:
   - `RIDGEPATH_RUNNER_ID`
@@ -199,6 +200,7 @@ Current runner behavior:
 Current capabilities reported by the heartbeat:
 
 - `heartbeat`
+- `project-catalog-sync`
 - `project-inventory`
 - `fabric-inventory`
 - `project-review`
@@ -226,6 +228,18 @@ Current command queue behavior:
 - Command creation, updates, and claims write immutable `command_events` audit records.
 
 Do not add command execution until command leases, idempotency, allowed command types, result capture, and audit validation are exercised end to end.
+
+## Hosted Project Catalog
+
+Hosted `/api/projects` now reads `command_center_projects` from Neon instead of returning an empty project list.
+
+Current behavior:
+
+- Local Forge remains responsible for filesystem discovery.
+- `runner:sync-projects` copies the discovered local project snapshot into Neon.
+- Hosted Ops reads the Neon project catalog and can display Projects without direct filesystem access.
+- Local start/stop/open-folder actions remain disabled until routed through approved runner commands.
+- On 2026-06-18, `411100-PCK39` synced 16 projects from `C:\Development\Projects`.
 
 ## Waypoint Agent Loop Guardrails
 

@@ -402,10 +402,11 @@ As of 2026-06-18, Forge has the first Neon-backed command-center storage pass in
 
 - `COMMAND_CENTER_DATABASE_URL` is the command-center-specific database setting.
 - `.env.local` is loaded by the API watchdog and ignored by Git.
-- `agent_runs`, `findings`, `proposals`, `approval_events`, `local_runners`, `command_requests`, and `command_events` are created automatically when Neon is configured.
+- `agent_runs`, `findings`, `proposals`, `approval_events`, `local_runners`, `command_center_projects`, `command_requests`, and `command_events` are created automatically when Neon is configured.
 - Local JSON remains available as an offline fallback for the same repository API.
 - Owner feedback, approval events, and proposal branch target policy are persisted in Neon.
 - New-project bootstrap context and key features are captured locally in the project registry and surfaced back through project discovery for future review agents.
 - Runtime command requests can be queued and approved, but local execution is still disabled until runner polling, claiming, allowlisted command payloads, and result/audit capture are implemented.
+- Hosted Projects are populated through `runner:sync-projects`, which reads the local Forge API and publishes a hosted-safe project catalog snapshot into Neon.
 
 Do not use the generic `DATABASE_URL` for this feature unless the intent is to make every Forge database consumer share the same database. Prefer feature-specific variables such as `COMMAND_CENTER_DATABASE_URL` and, later, `DEMO_DATABASE_URL`.

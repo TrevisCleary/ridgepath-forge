@@ -11,6 +11,7 @@ const FINDINGS_FILE = path.join(DATA_DIR, "findings.json");
 const LOCAL_RUNNERS_FILE = path.join(DATA_DIR, "local-runners.json");
 const COMMAND_REQUESTS_FILE = path.join(DATA_DIR, "command-requests.json");
 const COMMAND_EVENTS_FILE = path.join(DATA_DIR, "command-events.json");
+const PROJECT_CATALOG_FILE = path.join(DATA_DIR, "project-catalog.json");
 let commandCenterSql = null;
 let schemaReady = false;
 const RUNNER_STALE_MS = 2 * 60 * 1000;
@@ -155,6 +156,34 @@ function commandEventFromRow(row) {
   };
 }
 
+function projectCatalogFromRow(row) {
+  return normalizeProjectCatalogRecord({
+    id: row.id,
+    folderName: row.folder_name,
+    name: row.name,
+    description: row.description,
+    repositoryUrl: row.repository_url,
+    owner: row.owner,
+    audience: row.audience,
+    framework: row.framework,
+    status: row.status,
+    productionUrl: row.production_url,
+    liveUrl: row.live_url,
+    primaryLocalPath: row.primary_local_path,
+    packageManager: row.package_manager,
+    machineId: row.machine_id,
+    observedAt: row.observed_at,
+    services: parseJson(row.services, []),
+    scripts: parseJson(row.scripts, {}),
+    git: parseJson(row.git, {}),
+    bootstrap: parseJson(row.bootstrap, {}),
+    projectManagement: parseJson(row.project_management, {}),
+    metadata: parseJson(row.metadata, {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  });
+}
+
 function localRunnerFromRow(row) {
   return normalizeRunner({
     id: row.id,
@@ -172,6 +201,43 @@ function localRunnerFromRow(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   });
+}
+
+function normalizeProjectCatalogRecord(input = {}) {
+  const timestamp = input.updatedAt || input.observedAt || input.createdAt || nowIso();
+  const id = input.id || input.folderName || input.name || idFor("project");
+  return {
+    id,
+    folderName: input.folderName || input.id || id,
+    name: input.name || input.folderName || id,
+    version: input.version || "",
+    description: input.description || "No description available.",
+    path: input.primaryLocalPath || input.path || "",
+    origin: input.repositoryUrl || input.origin || "",
+    owner: input.owner || "",
+    audience: input.audience || "unknown",
+    bootstrap: normalizeObject(input.bootstrap),
+    registeredAt: input.registeredAt || "",
+    framework: input.framework || "Unknown",
+    liveUrl: input.liveUrl || "",
+    productionUrl: input.productionUrl || "",
+    packageManager: input.packageManager || "npm",
+    faviconUrl: "",
+    services: normalizeArray(input.services),
+    scripts: normalizeObject(input.scripts),
+    managed: false,
+    git: normalizeObject(input.git),
+    activity: normalizeArray(input.activity),
+    projectManagement: normalizeObject(input.projectManagement),
+    managedRunning: false,
+    status: input.status || "unknown",
+    logs: [],
+    machineId: input.machineId || "",
+    observedAt: input.observedAt || timestamp,
+    metadata: normalizeObject(input.metadata),
+    createdAt: input.createdAt || timestamp,
+    updatedAt: input.updatedAt || timestamp,
+  };
 }
 
 function normalizeCommandRequest(input = {}) {
@@ -311,6 +377,33 @@ async function ensureSchema(sql) {
       metadata jsonb not null default '{}'::jsonb,
       status text not null default 'online',
       last_seen_at timestamptz not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )
+  `;
+  await sql`
+    create table if not exists command_center_projects (
+      id text primary key,
+      folder_name text not null default '',
+      name text not null,
+      description text not null default '',
+      repository_url text not null default '',
+      owner text not null default '',
+      audience text not null default 'unknown',
+      framework text not null default 'Unknown',
+      status text not null default 'unknown',
+      production_url text not null default '',
+      live_url text not null default '',
+      primary_local_path text not null default '',
+      package_manager text not null default 'npm',
+      machine_id text not null default '',
+      observed_at timestamptz not null,
+      services jsonb not null default '[]'::jsonb,
+      scripts jsonb not null default '{}'::jsonb,
+      git jsonb not null default '{}'::jsonb,
+      bootstrap jsonb not null default '{}'::jsonb,
+      project_management jsonb not null default '{}'::jsonb,
+      metadata jsonb not null default '{}'::jsonb,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     )
@@ -458,6 +551,103 @@ export async function listLocalRunners() {
 export async function activeLocalRunners() {
   const runners = await listLocalRunners();
   return runners.filter((runner) => runner.paired);
+}
+
+export async function listCommandCenterProjects() {
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    const rows = await sql`
+      select *
+      from command_center_projects
+      order by audience asc, name asc
+      limit 500
+    `;
+    return rows.map(projectCatalogFromRow);
+  }
+
+  const projects = normalizeArray(await readJson(PROJECT_CATALOG_FILE, []));
+  return projects
+    .map(normalizeProjectCatalogRecord)
+    .sort((left, right) => `${left.audience}:${left.name}`.localeCompare(`${right.audience}:${right.name}`));
+}
+
+export async function upsertCommandCenterProject(input = {}) {
+  const timestamp = nowIso();
+  const project = normalizeProjectCatalogRecord({
+    ...input,
+    repositoryUrl: input.repositoryUrl || input.origin,
+    primaryLocalPath: input.primaryLocalPath || input.path,
+    observedAt: input.observedAt || timestamp,
+    updatedAt: timestamp,
+  });
+
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    await sql`
+      insert into command_center_projects (
+        id, folder_name, name, description, repository_url, owner, audience, framework, status,
+        production_url, live_url, primary_local_path, package_manager, machine_id, observed_at,
+        services, scripts, git, bootstrap, project_management, metadata, created_at, updated_at
+      )
+      values (
+        ${project.id}, ${project.folderName}, ${project.name}, ${project.description}, ${project.origin},
+        ${project.owner}, ${project.audience}, ${project.framework}, ${project.status}, ${project.productionUrl},
+        ${project.liveUrl}, ${project.path}, ${project.packageManager}, ${project.machineId}, ${project.observedAt},
+        ${serializeJson(project.services)}::jsonb, ${serializeJson(project.scripts)}::jsonb, ${serializeJson(project.git)}::jsonb,
+        ${serializeJson(project.bootstrap)}::jsonb, ${serializeJson(project.projectManagement)}::jsonb,
+        ${serializeJson(project.metadata)}::jsonb, ${project.createdAt}, ${project.updatedAt}
+      )
+      on conflict (id) do update set
+        folder_name = excluded.folder_name,
+        name = excluded.name,
+        description = excluded.description,
+        repository_url = excluded.repository_url,
+        owner = excluded.owner,
+        audience = excluded.audience,
+        framework = excluded.framework,
+        status = excluded.status,
+        production_url = excluded.production_url,
+        live_url = excluded.live_url,
+        primary_local_path = excluded.primary_local_path,
+        package_manager = excluded.package_manager,
+        machine_id = excluded.machine_id,
+        observed_at = excluded.observed_at,
+        services = excluded.services,
+        scripts = excluded.scripts,
+        git = excluded.git,
+        bootstrap = excluded.bootstrap,
+        project_management = excluded.project_management,
+        metadata = excluded.metadata,
+        updated_at = excluded.updated_at
+    `;
+    return project;
+  }
+
+  const projects = normalizeArray(await readJson(PROJECT_CATALOG_FILE, [])).map(normalizeProjectCatalogRecord);
+  const index = projects.findIndex((candidate) => candidate.id === project.id);
+  if (index >= 0) projects[index] = { ...projects[index], ...project };
+  else projects.push(project);
+  await writeJson(PROJECT_CATALOG_FILE, projects);
+  return project;
+}
+
+export async function syncCommandCenterProjects(projects = [], context = {}) {
+  const normalizedContext = normalizeObject(context);
+  const results = [];
+  for (const project of normalizeArray(projects)) {
+    results.push(await upsertCommandCenterProject({
+      ...project,
+      machineId: normalizedContext.machineId || project.machineId,
+      metadata: {
+        ...normalizeObject(project.metadata),
+        syncedBy: normalizedContext.syncedBy || "local-runner",
+        sourceRoot: normalizedContext.sourceRoot || "",
+      },
+    }));
+  }
+  return results;
 }
 
 export async function listCommandRequests(filters = {}) {
