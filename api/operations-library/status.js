@@ -1,4 +1,4 @@
-import { json, methodNotAllowed } from "../_lib/http.js";
+import { json, methodNotAllowed } from "../../server/hosted/http.js";
 
 export const config = {
   runtime: "nodejs",

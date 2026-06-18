@@ -1,5 +1,5 @@
 import { updateProposal } from "../../server/domains/command-center/repository.js";
-import { json, readJsonBody } from "../_lib/http.js";
+import { json, readJsonBody } from "../../server/hosted/http.js";
 
 export const config = {
   runtime: "nodejs",

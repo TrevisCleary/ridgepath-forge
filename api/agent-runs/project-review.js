@@ -1,4 +1,4 @@
-import { json } from "../_lib/http.js";
+import { json } from "../../server/hosted/http.js";
 
 export const config = {
   runtime: "nodejs",
