@@ -545,3 +545,12 @@ This gives an immediate command-center feel without destabilizing start/stop/run
 - Verified `npm.cmd run build`.
 - Browser-verified local Runtime on `http://127.0.0.1:3060`: Runtime renders the local command form, paired runner summary, empty execution-packet panel, and existing completed command audit trail.
 - Remaining next step: create or approve a non-mutating sample proposal packet to verify the full packet display and copy prompt with a live packet record.
+
+### Runtime Sync Controls Pass
+
+- Added explicit Runtime actions to queue Project catalog, Ridge Fabric, and Operations Library sync requests.
+- Kept sync actions on the same owner-approved command queue path instead of bypassing command approval and audit events.
+- Added `project-catalog-sync` to the manual command type selector.
+- Verified `npm.cmd run build`.
+- Browser-verified local Runtime on `http://127.0.0.1:3060`: `Sync Projects`, `Sync Fabric`, and `Sync Ops Library` actions render above the command form.
+- Remaining next step: execute one approved sync request from the hosted UI and confirm the runner updates Neon plus audit state end to end.

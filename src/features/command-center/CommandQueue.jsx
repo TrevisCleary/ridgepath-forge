@@ -3,6 +3,7 @@ import { Check, ClipboardCheck, Clock, PlayCircle, ShieldCheck, X } from "lucide
 import "./CommandQueue.css";
 
 const COMMAND_TYPES = [
+  { value: "project-catalog-sync", label: "Project catalog sync" },
   { value: "project-review", label: "Project review" },
   { value: "fabric-inventory", label: "Fabric inventory" },
   { value: "fabric-registry-sync", label: "Fabric sync" },
@@ -78,6 +79,13 @@ export function CommandQueue({
       setDraft((current) => ({ ...current, target: "", reason: "" }));
     });
   };
+  const queueQuickCommand = (commandType, target, reason) => onCreateCommand({
+    runnerId: activeRunners[0]?.id || "",
+    commandType,
+    target,
+    reason,
+    requestedBy: "owner",
+  });
   const copyPacketPrompt = async (packet) => {
     await navigator.clipboard.writeText(buildExecutionPrompt(packet, projectById.get(packet.projectId)));
     setCopiedPacketId(packet.id);
@@ -96,6 +104,21 @@ export function CommandQueue({
           <span>{activeRunners.length} active</span>
           <strong>{runners.length} known runners</strong>
         </div>
+      </div>
+
+      <div className="runtime-quick-actions" aria-label="Queue sync actions">
+        <button type="button" className="secondary-action" disabled={busy === "command-create"} onClick={() => queueQuickCommand("project-catalog-sync", "Project catalog", "Owner requested hosted project catalog refresh from the paired local runner.")}>
+          <PlayCircle size={15} />
+          Sync Projects
+        </button>
+        <button type="button" className="secondary-action" disabled={busy === "command-create"} onClick={() => queueQuickCommand("fabric-registry-sync", "Ridge Fabric registry", "Owner requested hosted Ridge Fabric snapshot refresh from the paired local runner.")}>
+          <PlayCircle size={15} />
+          Sync Fabric
+        </button>
+        <button type="button" className="secondary-action" disabled={busy === "command-create"} onClick={() => queueQuickCommand("operations-library-sync", "Operations Library validation snapshot", "Owner requested hosted Operations Library validation refresh from the paired local runner.")}>
+          <PlayCircle size={15} />
+          Sync Ops Library
+        </button>
       </div>
 
       <form className="command-request-form" onSubmit={createCommand}>
