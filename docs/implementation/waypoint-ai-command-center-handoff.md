@@ -203,6 +203,7 @@ Current runner behavior:
   - `RIDGEPATH_RUNNER_NAME`
 - Hosted Ops reads `/api/runners` and `/api/command-center/status`.
 - `/api/command-center/status` includes runner, project, Fabric, and command queue counts.
+- Local Forge mirrors the hosted `/api/runners`, `/api/commands`, and `/api/execution-packets` endpoints when `COMMAND_CENTER_DATABASE_URL` is configured, so the local UI can inspect the same Neon-backed runtime state.
 - A runner is considered paired while it is online and not stale.
 - Queue monitoring reports approved commands but does not claim or execute them.
 

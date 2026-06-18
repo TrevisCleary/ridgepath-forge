@@ -2880,6 +2880,100 @@ app.patch("/api/proposals/:proposalId", async (req, res) => {
   }
 });
 
+app.get("/api/runners", async (_req, res) => {
+  try {
+    const { listLocalRunners } = await import("./domains/command-center/repository.js");
+    const runners = await listLocalRunners();
+    res.json({
+      runners,
+      active: runners.filter((runner) => runner.paired),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/commands", async (req, res) => {
+  try {
+    const { listCommandEvents, listCommandRequests } = await import("./domains/command-center/repository.js");
+    const runnerId = req.query?.runnerId || "";
+    const [commands, events] = await Promise.all([
+      listCommandRequests({ runnerId }),
+      listCommandEvents(),
+    ]);
+    res.json({ commands, events });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/commands", async (req, res) => {
+  try {
+    const { createCommandRequest } = await import("./domains/command-center/repository.js");
+    res.status(201).json(await createCommandRequest(req.body || {}));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/commands/claim", async (req, res) => {
+  try {
+    const { claimNextCommandForRunner } = await import("./domains/command-center/repository.js");
+    const command = await claimNextCommandForRunner(req.body?.runnerId);
+    res.json({
+      command,
+      execution: command ? "claimed" : "idle",
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch("/api/commands/:commandId", async (req, res) => {
+  try {
+    const { updateCommandRequest } = await import("./domains/command-center/repository.js");
+    res.json(await updateCommandRequest(req.params.commandId, req.body || {}));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get("/api/execution-packets", async (req, res) => {
+  try {
+    const { listExecutionPacketEvents, listExecutionPackets } = await import("./domains/command-center/repository.js");
+    const proposalId = req.query?.proposalId || "";
+    const [packets, events] = await Promise.all([
+      listExecutionPackets(proposalId),
+      listExecutionPacketEvents(),
+    ]);
+    res.json({ packets, events });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/execution-packets/claim", async (req, res) => {
+  try {
+    const { claimNextExecutionPacketForRunner } = await import("./domains/command-center/repository.js");
+    const packet = await claimNextExecutionPacketForRunner(req.body?.runnerId);
+    res.json({
+      packet,
+      execution: packet ? "claimed" : "idle",
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch("/api/execution-packets/:packetId", async (req, res) => {
+  try {
+    const { updateExecutionPacket } = await import("./domains/command-center/repository.js");
+    res.json(await updateExecutionPacket(req.params.packetId, req.body || {}));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 app.get("/api/ridge-fabric", async (_req, res) => {
   try {
     res.json(await readRidgeFabricRegistry());

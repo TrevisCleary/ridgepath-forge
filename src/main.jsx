@@ -94,13 +94,13 @@ function App() {
 
   async function loadCommandCenterState() {
     const status = await apiJson("/api/command-center/status");
-    const hosted = Boolean(status?.hosted);
+    const sharedCommandCenter = Boolean(status?.hosted || status?.databaseConfigured);
     const [runData, proposalData, packetData, runnerData, commandData] = await Promise.all([
       apiJson("/api/agent-runs"),
       apiJson("/api/proposals"),
-      hosted ? apiJson("/api/execution-packets") : Promise.resolve({ packets: [] }),
-      hosted ? apiJson("/api/runners") : Promise.resolve({ runners: [] }),
-      hosted ? apiJson("/api/commands") : Promise.resolve({ commands: [], events: [] }),
+      sharedCommandCenter ? apiJson("/api/execution-packets") : Promise.resolve({ packets: [] }),
+      sharedCommandCenter ? apiJson("/api/runners") : Promise.resolve({ runners: [] }),
+      sharedCommandCenter ? apiJson("/api/commands") : Promise.resolve({ commands: [], events: [] }),
     ]);
     setCommandCenterStatus(status);
     setAgentRuns(runData.runs || []);
