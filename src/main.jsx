@@ -108,6 +108,7 @@ function App() {
   useEffect(() => {
     loadProjects();
     loadOperationsLibraryStatus();
+    loadRidgeFabricRegistry().catch((error) => setActionError(error.message));
     loadCommandCenterState().catch((error) => setActionError(error.message));
     const timer = window.setInterval(loadProjects, POLL_MS);
     return () => window.clearInterval(timer);

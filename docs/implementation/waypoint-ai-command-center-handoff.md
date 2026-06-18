@@ -188,6 +188,7 @@ Current runner behavior:
 - `npm.cmd run runner:start` runs the heartbeat loop every 60 seconds.
 - `npm.cmd run runner:queue` writes a heartbeat and reads approved queued commands once.
 - `npm.cmd run runner:queue:start` watches approved queued commands every `RIDGEPATH_RUNNER_QUEUE_SECONDS` seconds, defaulting to 60.
+- `npm.cmd run runner:sync-all` publishes both Projects and Fabric snapshots into Neon.
 - `npm.cmd run runner:sync-projects` reads the local Forge API and publishes the hosted project catalog into Neon.
 - `npm.cmd run runner:sync-fabric` reads the local Forge API and publishes the hosted Ridge Fabric snapshot into Neon.
 - The runner loads `.env.local` or `.env` and uses `COMMAND_CENTER_DATABASE_URL`.
@@ -195,6 +196,7 @@ Current runner behavior:
   - `RIDGEPATH_RUNNER_ID`
   - `RIDGEPATH_RUNNER_NAME`
 - Hosted Ops reads `/api/runners` and `/api/command-center/status`.
+- `/api/command-center/status` includes runner, project, Fabric, and command queue counts.
 - A runner is considered paired while it is online and not stale.
 - Queue monitoring reports approved commands but does not claim or execute them.
 
