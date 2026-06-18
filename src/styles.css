@@ -611,6 +611,131 @@ h3 {
   line-height: 1.45;
 }
 
+.operations-workspace {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px;
+  overflow: auto;
+}
+
+.operations-hero p:not(.eyebrow) {
+  overflow-wrap: anywhere;
+}
+
+.operations-metric.success svg {
+  color: var(--color-text-success);
+}
+
+.operations-metric.warning svg {
+  color: var(--color-text-warning);
+}
+
+.operations-metric.danger svg {
+  color: var(--color-text-danger);
+}
+
+.operations-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(280px, 0.75fr) minmax(320px, 1fr);
+  gap: 10px;
+}
+
+.operations-panel {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+  overflow: auto;
+}
+
+.operations-panel.wide {
+  grid-column: 1 / -1;
+}
+
+.operations-message-list,
+.operations-sync-status,
+.operations-availability {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: var(--color-background-secondary);
+  padding: 10px;
+}
+
+.operations-message-list.warning {
+  border-color: var(--color-border-warning);
+  background: var(--color-background-warning);
+}
+
+.operations-message-list.info {
+  border-color: #9fcbd5;
+  background: #edf9fb;
+}
+
+.operations-message-list strong,
+.operations-sync-status strong,
+.operations-availability > strong {
+  color: var(--color-brand-navy);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+}
+
+.operations-message-list span,
+.operations-sync-status span {
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+  font-weight: 750;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.operations-asset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.operations-availability span {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: 8px;
+  background: var(--color-background-primary);
+  padding: 7px 8px;
+}
+
+.operations-availability span.available svg {
+  color: var(--color-text-success);
+}
+
+.operations-availability span.missing {
+  border-color: var(--color-border-warning);
+  background: var(--color-background-warning);
+}
+
+.operations-availability span.missing svg {
+  color: var(--color-text-warning);
+}
+
+.operations-availability em {
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
 .approval-workspace,
 .agent-runs-workspace {
   min-height: 0;
@@ -3062,7 +3187,9 @@ h3 {
 
   .command-topbar,
   .overview-grid,
-  .overview-metrics {
+  .overview-metrics,
+  .operations-grid,
+  .operations-asset-grid {
     grid-template-columns: 1fr;
   }
 

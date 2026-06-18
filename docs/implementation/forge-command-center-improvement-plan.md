@@ -617,3 +617,12 @@ This gives an immediate command-center feel without destabilizing start/stop/run
 - Pinned the Vite dev proxy to `127.0.0.1:3059` so local browser requests do not depend on Windows `localhost` address resolution.
 - Added an in-flight guard around frontend project loading so manual Refresh and polling cannot stack overlapping `/api/projects` discovery calls.
 - Remaining next step: deploy the updated production site and verify `ops.ridgepath.io` Projects once an authenticated browser session is available.
+
+### Operations Library Workspace Pass
+
+- Replaced the Operations Library placeholder/modal path with a full-page workspace.
+- Added visible Operations Library validation metrics, configured path, issues, warnings, latest sync status, required folder/file availability, and workflow template/prompt availability.
+- Added a hosted-mode `Sync Ops Library` action that creates an owner-approved read-only `operations-library-sync` command for the paired local runner.
+- Kept local refresh separate from hosted runner sync so local mode can reload the API snapshot without entering the command queue.
+- Added responsive layout rules so the workspace collapses cleanly on smaller screens.
+- Remaining next step: build and browser-verify the Operations Library workspace locally, then deploy the updated production site.

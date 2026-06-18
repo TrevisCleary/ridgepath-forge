@@ -20,7 +20,7 @@ import { AgentRuns } from "./features/command-center/AgentRuns.jsx";
 import { ApprovalQueue } from "./features/command-center/ApprovalQueue.jsx";
 import { CommandQueue } from "./features/command-center/CommandQueue.jsx";
 import { DemoPortalModal } from "./features/demo-portal/DemoPortalModal.jsx";
-import { OperationsLibraryModal } from "./features/operations-library/OperationsLibraryModal.jsx";
+import { OperationsLibraryWorkspace } from "./features/operations-library/OperationsLibraryWorkspace.jsx";
 import { CommandCenterOverview } from "./features/overview/CommandCenterOverview.jsx";
 import { ProjectDetail } from "./features/projects/ProjectDetail.jsx";
 import { PortTreeModal } from "./features/projects/PortTreeModal.jsx";
@@ -53,7 +53,6 @@ function App() {
   const [filters, setFilters] = useState({ work: true, ridgepath: true, personal: true });
   const [showPortTree, setShowPortTree] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
-  const [showOperationsLibrary, setShowOperationsLibrary] = useState(false);
   const [activeView, setActiveView] = useState("overview");
   const [operationsLibrary, setOperationsLibrary] = useState(null);
   const [ridgeFabric, setRidgeFabric] = useState(null);
@@ -100,7 +99,12 @@ function App() {
   }
 
   async function loadOperationsLibraryStatus() {
-    setOperationsLibrary(await apiJson("/api/operations-library/status"));
+    setBusy("operations-refresh");
+    try {
+      setOperationsLibrary(await apiJson("/api/operations-library/status"));
+    } finally {
+      setBusy((current) => current === "operations-refresh" ? "" : current);
+    }
   }
 
   async function loadRidgeFabricRegistry() {
@@ -482,6 +486,25 @@ function App() {
     return command;
   }
 
+  async function queueOperationsLibrarySync() {
+    const runner = activeLocalRunners[0] || localRunners[0];
+    const command = await createLocalCommandRequest({
+      runnerId: runner?.id || "",
+      commandType: "operations-library-sync",
+      target: "Operations Library validation snapshot",
+      reason: "Owner requested hosted Operations Library validation refresh from the Operations Library workspace.",
+      requestedBy: "owner",
+      approvalStatus: "approved",
+      executionStatus: "queued",
+      approvedBy: "owner",
+      approvedAt: new Date().toISOString(),
+    });
+    if (command) {
+      setActionNotice("Operations Library sync approved and queued for the paired local runner.");
+    }
+    return command;
+  }
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return projects.filter((project) => {
@@ -510,6 +533,7 @@ function App() {
   const openCommandCount = commandRequests.filter((command) => ["pending", "approved"].includes(command.approvalStatus) && !["succeeded", "failed", "cancelled"].includes(command.executionStatus)).length;
   const openExecutionPacketCount = executionPackets.filter((packet) => !["complete", "failed", "cancelled"].includes(packet.status)).length;
   const latestProjectSyncCommand = commandRequests.find((command) => command.commandType === "project-catalog-sync") || null;
+  const latestOperationsSyncCommand = commandRequests.find((command) => command.commandType === "operations-library-sync") || null;
   const activeMachine = ridgeFabric?.editSession?.currentHost || ridgeFabric?.editSession?.active?.host || "Local";
   const navigationItems = [
     { key: "overview", label: "Overview", icon: <Home size={18} /> },
@@ -728,17 +752,14 @@ function App() {
           ]}
         />
       ) : activeView === "operations" ? (
-        <CommandPlaceholder
-          title="Operations Library"
-          icon={<ClipboardList size={20} />}
-          detail="This page will replace the modal with validation, prompts, standards, templates, and bootstrap workflow status."
-          rows={[
-            ["Validation", operationsLibrary?.validation?.status || "Not checked"],
-            ["Required folders", operationsLibrary?.requiredFolders?.length || 0],
-            ["Required files", operationsLibrary?.requiredFiles?.length || 0],
-          ]}
-          actionLabel="Open Current Modal"
-          onAction={() => setShowOperationsLibrary(true)}
+        <OperationsLibraryWorkspace
+          status={operationsLibrary}
+          hostedMode={hostedMode}
+          localRunnerPaired={localRunnerPaired}
+          latestSyncCommand={latestOperationsSyncCommand}
+          busy={busy}
+          onRefresh={loadOperationsLibraryStatus}
+          onSyncOperations={queueOperationsLibrarySync}
         />
       ) : activeView === "settings" ? (
         <CommandPlaceholder
@@ -756,7 +777,6 @@ function App() {
       </div>
       {showPortTree ? <PortTreeModal projects={projects} onClose={() => setShowPortTree(false)} /> : null}
       {showRegister ? <RegisterProjectModal busy={busy === "register"} onSubmit={registerProject} onClose={() => setShowRegister(false)} /> : null}
-      {showOperationsLibrary ? <OperationsLibraryModal status={operationsLibrary} onRefresh={loadOperationsLibraryStatus} onClose={() => setShowOperationsLibrary(false)} /> : null}
       {demoPortalProject ? (
         <DemoPortalModal
           project={demoPortalProject}
