@@ -10,6 +10,7 @@ const APPROVAL_EVENTS_FILE = path.join(DATA_DIR, "approval-events.json");
 const FINDINGS_FILE = path.join(DATA_DIR, "findings.json");
 const LOCAL_RUNNERS_FILE = path.join(DATA_DIR, "local-runners.json");
 const COMMAND_REQUESTS_FILE = path.join(DATA_DIR, "command-requests.json");
+const COMMAND_EVENTS_FILE = path.join(DATA_DIR, "command-events.json");
 let commandCenterSql = null;
 let schemaReady = false;
 const RUNNER_STALE_MS = 2 * 60 * 1000;
@@ -141,6 +142,17 @@ function commandRequestFromRow(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   });
+}
+
+function commandEventFromRow(row) {
+  return {
+    id: row.id,
+    commandId: row.command_id,
+    eventType: row.event_type,
+    actor: row.actor,
+    detail: parseJson(row.detail, {}),
+    createdAt: row.created_at,
+  };
 }
 
 function localRunnerFromRow(row) {
@@ -331,6 +343,16 @@ async function ensureSchema(sql) {
     )
   `;
   await sql`alter table command_requests add column if not exists claim_expires_at timestamptz`;
+  await sql`
+    create table if not exists command_events (
+      id text primary key,
+      command_id text not null references command_requests(id) on delete cascade,
+      event_type text not null,
+      actor text not null default 'system',
+      detail jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now()
+    )
+  `;
   schemaReady = true;
 }
 
@@ -478,6 +500,59 @@ export async function listQueuedCommandsForRunner(runnerId = "") {
   );
 }
 
+export async function listCommandEvents(commandId = "") {
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    const rows = commandId
+      ? await sql`
+          select *
+          from command_events
+          where command_id = ${commandId}
+          order by created_at desc
+        `
+      : await sql`
+          select *
+          from command_events
+          order by created_at desc
+          limit 250
+        `;
+    return rows.map(commandEventFromRow);
+  }
+
+  const events = normalizeArray(await readJson(COMMAND_EVENTS_FILE, []));
+  return events
+    .filter((event) => !commandId || event.commandId === commandId)
+    .sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")))
+    .slice(0, commandId ? events.length : 250);
+}
+
+async function appendCommandEvent(commandId, eventType, detail = {}, actor = "system") {
+  const event = {
+    id: idFor("command_event"),
+    commandId,
+    eventType,
+    actor,
+    detail: normalizeObject(detail),
+    createdAt: nowIso(),
+  };
+
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    await sql`
+      insert into command_events (id, command_id, event_type, actor, detail, created_at)
+      values (${event.id}, ${event.commandId}, ${event.eventType}, ${event.actor}, ${serializeJson(event.detail)}::jsonb, ${event.createdAt})
+    `;
+    return event;
+  }
+
+  const events = normalizeArray(await readJson(COMMAND_EVENTS_FILE, []));
+  events.unshift(event);
+  await writeJson(COMMAND_EVENTS_FILE, events.slice(0, 1000));
+  return event;
+}
+
 export async function claimNextCommandForRunner(runnerId = "") {
   const normalizedRunnerId = String(runnerId || "").trim();
   if (!normalizedRunnerId) throw new Error("Runner id is required to claim a command.");
@@ -506,7 +581,14 @@ export async function claimNextCommandForRunner(runnerId = "") {
       where id in (select id from candidate)
       returning *
     `;
-    return rows[0] ? commandRequestFromRow(rows[0]) : null;
+    if (!rows[0]) return null;
+    const command = commandRequestFromRow(rows[0]);
+    await appendCommandEvent(command.id, "claimed", {
+      runnerId: normalizedRunnerId,
+      claimExpiresAt: command.claimExpiresAt,
+      execution: "disabled",
+    }, normalizedRunnerId);
+    return command;
   }
 
   const commands = normalizeArray(await readJson(COMMAND_REQUESTS_FILE, [])).map(normalizeCommandRequest);
@@ -525,6 +607,11 @@ export async function claimNextCommandForRunner(runnerId = "") {
     updatedAt: timestamp,
   });
   await writeJson(COMMAND_REQUESTS_FILE, commands);
+  await appendCommandEvent(commands[index].id, "claimed", {
+    runnerId: normalizedRunnerId,
+    claimExpiresAt,
+    execution: "disabled",
+  }, normalizedRunnerId);
   return commands[index];
 }
 
@@ -558,12 +645,26 @@ export async function createCommandRequest(input = {}) {
         ${command.finishedAt || null}, ${command.createdAt}, ${command.updatedAt}
       )
     `;
+    await appendCommandEvent(command.id, "created", {
+      commandType: command.commandType,
+      runnerId: command.runnerId,
+      projectId: command.projectId,
+      approvalStatus: command.approvalStatus,
+      executionStatus: command.executionStatus,
+    }, command.requestedBy);
     return command;
   }
 
   const commands = normalizeArray(await readJson(COMMAND_REQUESTS_FILE, []));
   commands.unshift(command);
   await writeJson(COMMAND_REQUESTS_FILE, commands.slice(0, 500));
+  await appendCommandEvent(command.id, "created", {
+    commandType: command.commandType,
+    runnerId: command.runnerId,
+    projectId: command.projectId,
+    approvalStatus: command.approvalStatus,
+    executionStatus: command.executionStatus,
+  }, command.requestedBy);
   return command;
 }
 
@@ -613,6 +714,11 @@ export async function updateCommandRequest(commandId, patch = {}) {
           updated_at = ${next.updatedAt}
       where id = ${commandId}
     `;
+    await appendCommandEvent(commandId, "updated", {
+      approvalStatus: next.approvalStatus,
+      executionStatus: next.executionStatus,
+      error: next.error,
+    }, normalizedPatch.approvedBy || normalizedPatch.actor || "owner");
     return next;
   }
 
@@ -621,6 +727,11 @@ export async function updateCommandRequest(commandId, patch = {}) {
   if (index < 0) throw new Error("Command request not found.");
   commands[index] = applyPatch(normalizeCommandRequest(commands[index]));
   await writeJson(COMMAND_REQUESTS_FILE, commands);
+  await appendCommandEvent(commandId, "updated", {
+    approvalStatus: commands[index].approvalStatus,
+    executionStatus: commands[index].executionStatus,
+    error: commands[index].error,
+  }, normalizedPatch.approvedBy || normalizedPatch.actor || "owner");
   return commands[index];
 }
 

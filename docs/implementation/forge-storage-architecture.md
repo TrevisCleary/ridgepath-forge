@@ -292,6 +292,19 @@ Fields:
 - `created_at`
 - `updated_at`
 
+### command_events
+
+Immutable audit events for command request changes.
+
+Fields:
+
+- `id`
+- `command_id`
+- `event_type`
+- `actor`
+- `detail`
+- `created_at`
+
 ### execution_packets
 
 Approved work packets for Codex/local agents.
@@ -389,7 +402,7 @@ As of 2026-06-18, Forge has the first Neon-backed command-center storage pass in
 
 - `COMMAND_CENTER_DATABASE_URL` is the command-center-specific database setting.
 - `.env.local` is loaded by the API watchdog and ignored by Git.
-- `agent_runs`, `findings`, `proposals`, `approval_events`, `local_runners`, and `command_requests` are created automatically when Neon is configured.
+- `agent_runs`, `findings`, `proposals`, `approval_events`, `local_runners`, `command_requests`, and `command_events` are created automatically when Neon is configured.
 - Local JSON remains available as an offline fallback for the same repository API.
 - Owner feedback, approval events, and proposal branch target policy are persisted in Neon.
 - New-project bootstrap context and key features are captured locally in the project registry and surfaced back through project discovery for future review agents.

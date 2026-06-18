@@ -1,4 +1,4 @@
-import { createCommandRequest, listCommandRequests } from "../server/domains/command-center/repository.js";
+import { createCommandRequest, listCommandEvents, listCommandRequests } from "../server/domains/command-center/repository.js";
 import { json, methodNotAllowed, readJsonBody } from "../server/hosted/http.js";
 
 export const config = {
@@ -8,7 +8,11 @@ export const config = {
 export default async function handler(req, res) {
   if (req.method === "GET") {
     const runnerId = req.query?.runnerId || "";
-    return json(res, { commands: await listCommandRequests({ runnerId }) });
+    const [commands, events] = await Promise.all([
+      listCommandRequests({ runnerId }),
+      listCommandEvents(),
+    ]);
+    return json(res, { commands, events });
   }
 
   if (req.method === "POST") {
