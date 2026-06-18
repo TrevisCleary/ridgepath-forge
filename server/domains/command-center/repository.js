@@ -464,6 +464,15 @@ export async function listCommandRequests(filters = {}) {
     .slice(0, normalizedFilters.runnerId ? 100 : 200);
 }
 
+export async function listQueuedCommandsForRunner(runnerId = "") {
+  const commands = await listCommandRequests({ runnerId });
+  return commands.filter((command) =>
+    command.approvalStatus === "approved" &&
+    command.executionStatus === "queued" &&
+    (!command.runnerId || !runnerId || command.runnerId === runnerId)
+  );
+}
+
 export async function createCommandRequest(input = {}) {
   const timestamp = nowIso();
   const command = normalizeCommandRequest({
