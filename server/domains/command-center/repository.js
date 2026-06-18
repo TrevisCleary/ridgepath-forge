@@ -87,6 +87,7 @@ function proposalFromRow(row) {
     id: row.id,
     proposalKey: row.proposal_key || "",
     duplicateCount: 1,
+    duplicateIds: [row.id],
     projectId: row.project_id,
     title: row.title,
     summary: row.summary,
@@ -428,6 +429,7 @@ function collapseDuplicateOpenProposals(proposals = []) {
       ownerNotes: existing.ownerNotes || normalized.ownerNotes || "",
       evidence: normalizeArray(existing.evidence).length ? existing.evidence : normalizeArray(normalized.evidence),
       validationPlan: normalizeArray(existing.validationPlan).length ? existing.validationPlan : normalizeArray(normalized.validationPlan),
+      duplicateIds: [...new Set([...normalizeArray(existing.duplicateIds), ...normalizeArray(normalized.duplicateIds), normalized.id].filter(Boolean))],
       duplicateCount: (existing.duplicateCount || 1) + 1,
     };
   }

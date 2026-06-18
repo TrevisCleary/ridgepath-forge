@@ -587,6 +587,7 @@ function App() {
           proposals={proposals}
           executionPackets={executionPackets}
           executionPacketEvents={executionPacketEvents}
+          approvalEvents={approvalEvents}
           projects={projects}
           storageStatus={commandCenterStatus}
           busy={busy}

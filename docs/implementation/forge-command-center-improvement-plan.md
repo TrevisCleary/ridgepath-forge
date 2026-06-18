@@ -564,3 +564,14 @@ This gives an immediate command-center feel without destabilizing start/stop/run
 - Verified the local `/api/proposals` read model returns two active proposal cards with `duplicateCount: 2` instead of four duplicate cards.
 - Browser-verified local Approval Queue on `http://127.0.0.1:3060`: two cards render, each shows `2 matching reviews compacted`, and the prior PM-initialization feedback remains visible.
 - Remaining next step: add an owner-visible proposal detail/history surface so compacted duplicates and approval events can be inspected without reintroducing card noise.
+
+### Approval Detail History Pass
+
+- Added compacted proposal ids to the proposal read model so approval events attached to older duplicate rows remain discoverable.
+- Added inline `Details` / `Hide Details` controls to Approval Queue cards.
+- Proposal details now show evidence, rollback plan, compacted record ids, and approval history.
+- Passed approval events into the Approval Queue surface and matched events across compacted duplicate ids.
+- Verified `npm.cmd run build`.
+- Restarted local Forge services and verified `/api/proposals` includes `duplicateIds` for compacted active proposals.
+- Browser-verified local Approval Queue on `http://127.0.0.1:3060`: expanding the PM-initialization card shows evidence, rollback, both compacted proposal ids, and the prior feedback event.
+- Remaining next step: verify the same approval details on protected `ops.ridgepath.io` and then test one owner-approved sync command end to end from hosted Runtime.

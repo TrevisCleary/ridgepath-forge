@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Check, ClipboardCheck, Clock, MessageSquareText, Play, ShieldAlert, X } from "lucide-react";
+import { Check, ClipboardCheck, Clock, Info, MessageSquareText, Play, ShieldAlert, X } from "lucide-react";
 
 const STATUS_OPTIONS = [
   { status: "approved", decision: "approved", label: "Approve", icon: <Check size={15} /> },
@@ -12,6 +12,7 @@ export function ApprovalQueue({
   proposals,
   executionPackets = [],
   executionPacketEvents = [],
+  approvalEvents = [],
   projects,
   storageStatus,
   busy,
@@ -24,6 +25,7 @@ export function ApprovalQueue({
   const [feedbackDrafts, setFeedbackDrafts] = useState({});
   const [branchPolicies, setBranchPolicies] = useState({});
   const [copiedPacketId, setCopiedPacketId] = useState("");
+  const [expandedProposalId, setExpandedProposalId] = useState("");
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const packetByProposalId = useMemo(
     () => new Map(executionPackets.map((packet) => [packet.proposalId, packet])),
@@ -36,6 +38,15 @@ export function ApprovalQueue({
     }
     return map;
   }, [executionPacketEvents]);
+  const eventsByProposalId = useMemo(() => {
+    const map = new Map();
+    for (const event of approvalEvents) {
+      const current = map.get(event.proposalId) || [];
+      current.push(event);
+      map.set(event.proposalId, current);
+    }
+    return map;
+  }, [approvalEvents]);
   const visible = proposals.filter((proposal) => {
     if (selectedStatus === "open") return ["proposed", "needs-evidence", "deferred"].includes(proposal.status);
     if (selectedStatus === "all") return true;
@@ -79,6 +90,9 @@ export function ApprovalQueue({
           const latestPacketEvent = packet ? latestEventByPacketId.get(packet.id) : null;
           const feedback = feedbackDrafts[proposal.id] ?? proposal.ownerNotes ?? "";
           const branchPolicy = branchPolicies[proposal.id] ?? proposal.targetBranchPolicy ?? "feature-branch";
+          const duplicateIds = proposal.duplicateIds?.length ? proposal.duplicateIds : [proposal.id];
+          const proposalEvents = duplicateIds.flatMap((id) => eventsByProposalId.get(id) || []);
+          const detailsOpen = expandedProposalId === proposal.id;
           const submitDecision = (option) => onUpdateProposal(proposal.id, {
             status: option.status,
             decision: option.decision,
@@ -151,8 +165,42 @@ export function ApprovalQueue({
                     </select>
                   </label>
                 </div>
+                {detailsOpen ? (
+                  <div className="approval-detail-panel">
+                    <div>
+                      <strong>Evidence</strong>
+                      {proposal.evidence?.length ? (
+                        <ul>
+                          {proposal.evidence.map((item) => <li key={typeof item === "string" ? item : JSON.stringify(item)}>{formatEvidence(item)}</li>)}
+                        </ul>
+                      ) : <span>No evidence captured.</span>}
+                    </div>
+                    <div>
+                      <strong>Rollback</strong>
+                      <span>{proposal.rollbackPlan || "No rollback plan recorded."}</span>
+                    </div>
+                    <div>
+                      <strong>Compacted Records</strong>
+                      <span>{duplicateIds.join(", ")}</span>
+                    </div>
+                    <div>
+                      <strong>Approval History</strong>
+                      {proposalEvents.length ? (
+                        <ul>
+                          {proposalEvents.map((event) => (
+                            <li key={event.id}>{formatStatus(event.decision)} by {event.decidedBy || "owner"} · {formatTime(event.createdAt)}{event.comment ? ` · ${event.comment}` : ""}</li>
+                          ))}
+                        </ul>
+                      ) : <span>No approval events recorded.</span>}
+                    </div>
+                  </div>
+                ) : null}
               </div>
               <div className="approval-actions">
+                <button type="button" disabled={busy === proposal.id} onClick={() => setExpandedProposalId((current) => current === proposal.id ? "" : proposal.id)}>
+                  <Info size={15} />
+                  {detailsOpen ? "Hide Details" : "Details"}
+                </button>
                 <button type="button" disabled={busy === proposal.id || !feedback.trim()} onClick={saveFeedback}>
                   <MessageSquareText size={15} />
                   Save Feedback
@@ -189,6 +237,13 @@ function formatTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function formatEvidence(item) {
+  if (typeof item === "string") return item;
+  if (!item || typeof item !== "object") return String(item || "");
+  if ("label" in item || "value" in item) return `${item.label || "Evidence"}: ${item.value || ""}`;
+  return JSON.stringify(item);
 }
 
 function buildExecutionPrompt(packet, project) {
