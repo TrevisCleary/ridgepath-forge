@@ -7,6 +7,7 @@ const DATA_DIR = path.resolve(process.cwd(), "data", "command-center");
 const AGENT_RUNS_FILE = path.join(DATA_DIR, "agent-runs.json");
 const PROPOSALS_FILE = path.join(DATA_DIR, "proposals.json");
 const APPROVAL_EVENTS_FILE = path.join(DATA_DIR, "approval-events.json");
+const EXECUTION_PACKETS_FILE = path.join(DATA_DIR, "execution-packets.json");
 const FINDINGS_FILE = path.join(DATA_DIR, "findings.json");
 const LOCAL_RUNNERS_FILE = path.join(DATA_DIR, "local-runners.json");
 const COMMAND_REQUESTS_FILE = path.join(DATA_DIR, "command-requests.json");
@@ -117,6 +118,22 @@ function agentRunFromRow(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function executionPacketFromRow(row) {
+  return normalizeExecutionPacket({
+    id: row.id,
+    proposalId: row.proposal_id,
+    projectId: row.project_id || "",
+    objective: row.objective,
+    constraints: parseJson(row.constraints, []),
+    branchName: row.branch_name || "",
+    branchPolicy: row.branch_policy || "feature-branch",
+    status: row.status,
+    validationResult: row.validation_result || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  });
 }
 
 function commandRequestFromRow(row) {
@@ -284,6 +301,23 @@ function normalizeOperationsLibrarySnapshot(input = {}) {
   };
 }
 
+function normalizeExecutionPacket(input = {}) {
+  const timestamp = input.updatedAt || input.createdAt || nowIso();
+  return {
+    id: input.id || idFor("packet"),
+    proposalId: input.proposalId || "",
+    projectId: input.projectId || "",
+    objective: input.objective || "Approved work packet",
+    constraints: normalizeArray(input.constraints),
+    branchName: input.branchName || "",
+    branchPolicy: input.branchPolicy || "feature-branch",
+    status: input.status || "ready",
+    validationResult: input.validationResult || "",
+    createdAt: input.createdAt || timestamp,
+    updatedAt: input.updatedAt || timestamp,
+  };
+}
+
 function normalizeCommandRequest(input = {}) {
   const timestamp = input.createdAt || input.updatedAt || nowIso();
   const approvalStatus = COMMAND_APPROVAL_STATUSES.has(input.approvalStatus) ? input.approvalStatus : "pending";
@@ -405,6 +439,21 @@ async function ensureSchema(sql) {
       decided_by text not null default 'owner',
       comment text not null default '',
       created_at timestamptz not null default now()
+    )
+  `;
+  await sql`
+    create table if not exists execution_packets (
+      id text primary key,
+      proposal_id text not null references proposals(id) on delete cascade,
+      project_id text,
+      objective text not null default '',
+      constraints jsonb not null default '[]'::jsonb,
+      branch_name text not null default '',
+      branch_policy text not null default 'feature-branch',
+      status text not null default 'ready',
+      validation_result text not null default '',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
     )
   `;
   await sql`
@@ -590,6 +639,86 @@ export async function listApprovalEvents(proposalId = "") {
   return events
     .filter((event) => !proposalId || event.proposalId === proposalId)
     .sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")));
+}
+
+export async function listExecutionPackets(proposalId = "") {
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    const rows = proposalId
+      ? await sql`
+          select *
+          from execution_packets
+          where proposal_id = ${proposalId}
+          order by updated_at desc
+        `
+      : await sql`
+          select *
+          from execution_packets
+          order by updated_at desc
+          limit 200
+        `;
+    return rows.map(executionPacketFromRow);
+  }
+
+  const packets = normalizeArray(await readJson(EXECUTION_PACKETS_FILE, []));
+  return packets
+    .map(normalizeExecutionPacket)
+    .filter((packet) => !proposalId || packet.proposalId === proposalId)
+    .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")));
+}
+
+export async function createExecutionPacketForProposal(proposal, patch = {}) {
+  const timestamp = nowIso();
+  const packet = normalizeExecutionPacket({
+    id: `packet_${proposal.id}`,
+    proposalId: proposal.id,
+    projectId: proposal.projectId,
+    objective: proposal.title,
+    constraints: [
+      proposal.summary,
+      proposal.whyNow ? `Why now: ${proposal.whyNow}` : "",
+      proposal.rollbackPlan ? `Rollback: ${proposal.rollbackPlan}` : "",
+      ...(proposal.validationPlan || []).map((item) => `Validate: ${item}`),
+      proposal.ownerNotes ? `Owner notes: ${proposal.ownerNotes}` : "",
+    ].filter(Boolean),
+    branchPolicy: proposal.targetBranchPolicy || "feature-branch",
+    status: "ready",
+    ...normalizeObject(patch),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    await sql`
+      insert into execution_packets (
+        id, proposal_id, project_id, objective, constraints, branch_name, branch_policy, status,
+        validation_result, created_at, updated_at
+      )
+      values (
+        ${packet.id}, ${packet.proposalId}, ${packet.projectId || null}, ${packet.objective},
+        ${serializeJson(packet.constraints)}::jsonb, ${packet.branchName}, ${packet.branchPolicy},
+        ${packet.status}, ${packet.validationResult}, ${packet.createdAt}, ${packet.updatedAt}
+      )
+      on conflict (id) do update set
+        project_id = excluded.project_id,
+        objective = excluded.objective,
+        constraints = excluded.constraints,
+        branch_policy = excluded.branch_policy,
+        status = excluded.status,
+        updated_at = excluded.updated_at
+    `;
+    return packet;
+  }
+
+  const packets = normalizeArray(await readJson(EXECUTION_PACKETS_FILE, [])).map(normalizeExecutionPacket);
+  const index = packets.findIndex((candidate) => candidate.id === packet.id);
+  if (index >= 0) packets[index] = { ...packets[index], ...packet };
+  else packets.unshift(packet);
+  await writeJson(EXECUTION_PACKETS_FILE, packets);
+  return packet;
 }
 
 export async function listLocalRunners() {
@@ -1289,6 +1418,7 @@ export async function updateProposal(proposalId, patch = {}) {
         values (${idFor("approval")}, ${proposalId}, ${normalizedPatch.decision}, ${normalizedPatch.decidedBy || "owner"}, ${normalizedPatch.comment || ""}, ${timestamp})
       `;
     }
+    if (next.status === "approved") await createExecutionPacketForProposal(next);
     return next;
   }
 
@@ -1315,6 +1445,7 @@ export async function updateProposal(proposalId, patch = {}) {
     });
     await writeJson(APPROVAL_EVENTS_FILE, events);
   }
+  if (proposals[index].status === "approved") await createExecutionPacketForProposal(proposals[index]);
   return proposals[index];
 }
 

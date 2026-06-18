@@ -10,6 +10,7 @@ const STATUS_OPTIONS = [
 
 export function ApprovalQueue({
   proposals,
+  executionPackets = [],
   projects,
   storageStatus,
   busy,
@@ -22,6 +23,10 @@ export function ApprovalQueue({
   const [feedbackDrafts, setFeedbackDrafts] = useState({});
   const [branchPolicies, setBranchPolicies] = useState({});
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
+  const packetByProposalId = useMemo(
+    () => new Map(executionPackets.map((packet) => [packet.proposalId, packet])),
+    [executionPackets],
+  );
   const visible = proposals.filter((proposal) => {
     if (selectedStatus === "open") return ["proposed", "needs-evidence", "deferred"].includes(proposal.status);
     if (selectedStatus === "all") return true;
@@ -61,6 +66,7 @@ export function ApprovalQueue({
       <div className="approval-list">
         {visible.length ? visible.map((proposal) => {
           const project = projectById.get(proposal.projectId);
+          const packet = packetByProposalId.get(proposal.id);
           const feedback = feedbackDrafts[proposal.id] ?? proposal.ownerNotes ?? "";
           const branchPolicy = branchPolicies[proposal.id] ?? proposal.targetBranchPolicy ?? "feature-branch";
           const submitDecision = (option) => onUpdateProposal(proposal.id, {
@@ -90,6 +96,11 @@ export function ApprovalQueue({
                 {proposal.whyNow ? <p className="approval-why">{proposal.whyNow}</p> : null}
                 <div className="approval-meta">
                   <span className={`status-pill ${proposal.status}`}>{formatStatus(proposal.status)}</span>
+                  {proposal.status === "approved" ? (
+                    <span className={`status-pill ${packet ? packet.status : "pending"}`}>
+                      Execution packet: {packet ? `${formatStatus(packet.status)} · ${formatStatus(packet.branchPolicy)}` : "pending"}
+                    </span>
+                  ) : null}
                   <span>Risk: {proposal.risk}</span>
                   <span>Confidence: {proposal.confidence}</span>
                   <span>{formatTime(proposal.updatedAt || proposal.createdAt)}</span>

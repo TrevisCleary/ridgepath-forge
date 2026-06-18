@@ -60,6 +60,7 @@ function App() {
   const [agentRuns, setAgentRuns] = useState([]);
   const [proposals, setProposals] = useState([]);
   const [approvalEvents, setApprovalEvents] = useState([]);
+  const [executionPackets, setExecutionPackets] = useState([]);
   const [localRunners, setLocalRunners] = useState([]);
   const [commandRequests, setCommandRequests] = useState([]);
   const [commandEvents, setCommandEvents] = useState([]);
@@ -93,9 +94,10 @@ function App() {
   async function loadCommandCenterState() {
     const status = await apiJson("/api/command-center/status");
     const hosted = Boolean(status?.hosted);
-    const [runData, proposalData, runnerData, commandData] = await Promise.all([
+    const [runData, proposalData, packetData, runnerData, commandData] = await Promise.all([
       apiJson("/api/agent-runs"),
       apiJson("/api/proposals"),
+      hosted ? apiJson("/api/execution-packets") : Promise.resolve({ packets: [] }),
       hosted ? apiJson("/api/runners") : Promise.resolve({ runners: [] }),
       hosted ? apiJson("/api/commands") : Promise.resolve({ commands: [], events: [] }),
     ]);
@@ -103,6 +105,7 @@ function App() {
     setAgentRuns(runData.runs || []);
     setProposals(proposalData.proposals || []);
     setApprovalEvents(proposalData.approvalEvents || []);
+    setExecutionPackets(packetData.packets || []);
     setLocalRunners(runnerData.runners || []);
     setCommandRequests(commandData.commands || []);
     setCommandEvents(commandData.events || []);
@@ -579,6 +582,7 @@ function App() {
       ) : activeView === "approval" ? (
         <ApprovalQueue
           proposals={proposals}
+          executionPackets={executionPackets}
           projects={projects}
           storageStatus={commandCenterStatus}
           busy={busy}

@@ -249,6 +249,20 @@ Executor behavior:
 
 On 2026-06-18, `411100-PCK39` completed an end-to-end safe runner execution smoke test for `operations-library-sync`; the command was created, approved, claimed, executed, and marked `succeeded`.
 
+## Execution Packets
+
+Approved proposals now create durable execution packets.
+
+Current behavior:
+
+- `execution_packets` is created automatically in Neon when `COMMAND_CENTER_DATABASE_URL` is configured.
+- `/api/execution-packets` lists approved work packets for hosted Ops.
+- `/api/command-center/status` includes `executionPacketCount`.
+- The Approval Queue displays packet readiness on approved proposals.
+- Packet constraints include the proposal summary, why-now context, rollback notes, validation plan, and owner feedback.
+
+Execution packets are the handoff boundary between owner approval and Codex/runner implementation. They should be consumed only after approval and should preserve the selected branch policy.
+
 ## Hosted Project Catalog
 
 Hosted `/api/projects` now reads `command_center_projects` from Neon instead of returning an empty project list.
@@ -309,10 +323,10 @@ Default denied without explicit owner approval:
 
 ## Immediate Next Build Step
 
-Deepen the approval-centered backend and UI foundation:
+Close the approved-proposal implementation loop:
 
-1. Add runner polling that can read approved queued commands without executing them.
-2. Add command claiming and lease semantics so one runner owns one command at a time.
-3. Define an allowlist for command types and per-command payload schemas.
-4. Add result capture and command audit events.
-5. Only then enable low-risk local execution behind explicit owner approval.
+1. Add a Codex/Waypoint consumer for `execution_packets`.
+2. Claim one ready packet at a time and create the approved branch/worktree.
+3. Update packet status as `running`, `blocked`, `complete`, or `failed`.
+4. Write validation results back to Neon.
+5. Keep all file edits, commits, pushes, and deployments behind the selected owner-approved branch policy.
