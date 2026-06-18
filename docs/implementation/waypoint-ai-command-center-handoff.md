@@ -214,14 +214,16 @@ Current command queue behavior:
 
 - `/api/commands` lists and creates command requests.
 - `/api/commands/[commandId]` updates approval and execution state.
+- `/api/commands/claim` atomically claims one approved queued command for a runner and assigns a five-minute lease.
 - Command requests are persisted in Neon when `COMMAND_CENTER_DATABASE_URL` is configured.
 - Local JSON remains available as an offline fallback.
 - New requests require an owner reason and start as `approvalStatus: pending` and `executionStatus: blocked`.
 - Owner approval moves a blocked request to `executionStatus: queued`.
 - The Runtime page shows the queue and allows pending requests to be approved or cancelled.
-- The local runner does not claim, poll, or execute queued requests yet.
+- The local runner monitor polls/read-lists queued requests but does not claim or execute them by default.
+- Claiming is available as a backend primitive for the next runner phase, not as enabled execution.
 
-Do not add command execution until runner polling, command claiming, idempotency, allowed command types, result capture, and audit validation are implemented.
+Do not add command execution until command leases, idempotency, allowed command types, result capture, and audit validation are exercised end to end.
 
 ## Waypoint Agent Loop Guardrails
 

@@ -13,6 +13,7 @@ const COMMAND_REQUESTS_FILE = path.join(DATA_DIR, "command-requests.json");
 let commandCenterSql = null;
 let schemaReady = false;
 const RUNNER_STALE_MS = 2 * 60 * 1000;
+const COMMAND_CLAIM_LEASE_MS = 5 * 60 * 1000;
 const COMMAND_APPROVAL_STATUSES = new Set(["pending", "approved", "rejected", "cancelled"]);
 const COMMAND_EXECUTION_STATUSES = new Set(["blocked", "queued", "claimed", "running", "succeeded", "failed", "cancelled"]);
 
@@ -135,6 +136,7 @@ function commandRequestFromRow(row) {
     approvedAt: row.approved_at || "",
     claimedByRunnerId: row.claimed_by_runner_id || "",
     claimedAt: row.claimed_at || "",
+    claimExpiresAt: row.claim_expires_at || "",
     finishedAt: row.finished_at || "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -188,6 +190,7 @@ function normalizeCommandRequest(input = {}) {
     approvedAt: input.approvedAt || "",
     claimedByRunnerId: input.claimedByRunnerId || "",
     claimedAt: input.claimedAt || "",
+    claimExpiresAt: input.claimExpiresAt || "",
     finishedAt: input.finishedAt || "",
     createdAt: input.createdAt || timestamp,
     updatedAt: input.updatedAt || timestamp,
@@ -321,11 +324,13 @@ async function ensureSchema(sql) {
       approved_at timestamptz,
       claimed_by_runner_id text,
       claimed_at timestamptz,
+      claim_expires_at timestamptz,
       finished_at timestamptz,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     )
   `;
+  await sql`alter table command_requests add column if not exists claim_expires_at timestamptz`;
   schemaReady = true;
 }
 
@@ -471,6 +476,56 @@ export async function listQueuedCommandsForRunner(runnerId = "") {
     command.executionStatus === "queued" &&
     (!command.runnerId || !runnerId || command.runnerId === runnerId)
   );
+}
+
+export async function claimNextCommandForRunner(runnerId = "") {
+  const normalizedRunnerId = String(runnerId || "").trim();
+  if (!normalizedRunnerId) throw new Error("Runner id is required to claim a command.");
+  const timestamp = nowIso();
+  const claimExpiresAt = new Date(Date.now() + COMMAND_CLAIM_LEASE_MS).toISOString();
+
+  const sql = db();
+  if (sql) {
+    await ensureSchema(sql);
+    const rows = await sql`
+      with candidate as (
+        select id
+        from command_requests
+        where approval_status = 'approved'
+          and execution_status = 'queued'
+          and (runner_id is null or runner_id = '' or runner_id = ${normalizedRunnerId})
+        order by approved_at nulls last, created_at asc
+        limit 1
+      )
+      update command_requests
+      set execution_status = 'claimed',
+          claimed_by_runner_id = ${normalizedRunnerId},
+          claimed_at = ${timestamp},
+          claim_expires_at = ${claimExpiresAt},
+          updated_at = ${timestamp}
+      where id in (select id from candidate)
+      returning *
+    `;
+    return rows[0] ? commandRequestFromRow(rows[0]) : null;
+  }
+
+  const commands = normalizeArray(await readJson(COMMAND_REQUESTS_FILE, [])).map(normalizeCommandRequest);
+  const index = commands.findIndex((command) =>
+    command.approvalStatus === "approved" &&
+    command.executionStatus === "queued" &&
+    (!command.runnerId || command.runnerId === normalizedRunnerId)
+  );
+  if (index < 0) return null;
+  commands[index] = normalizeCommandRequest({
+    ...commands[index],
+    executionStatus: "claimed",
+    claimedByRunnerId: normalizedRunnerId,
+    claimedAt: timestamp,
+    claimExpiresAt,
+    updatedAt: timestamp,
+  });
+  await writeJson(COMMAND_REQUESTS_FILE, commands);
+  return commands[index];
 }
 
 export async function createCommandRequest(input = {}) {

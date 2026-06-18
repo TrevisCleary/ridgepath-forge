@@ -287,6 +287,7 @@ Fields:
 - `approved_at`
 - `claimed_by_runner_id`
 - `claimed_at`
+- `claim_expires_at`
 - `finished_at`
 - `created_at`
 - `updated_at`
