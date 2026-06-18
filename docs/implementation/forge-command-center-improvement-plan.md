@@ -575,3 +575,25 @@ This gives an immediate command-center feel without destabilizing start/stop/run
 - Restarted local Forge services and verified `/api/proposals` includes `duplicateIds` for compacted active proposals.
 - Browser-verified local Approval Queue on `http://127.0.0.1:3060`: expanding the PM-initialization card shows evidence, rollback, both compacted proposal ids, and the prior feedback event.
 - Remaining next step: verify the same approval details on protected `ops.ridgepath.io` and then test one owner-approved sync command end to end from hosted Runtime.
+
+### Runner Command Sync Verification Pass
+
+- Verified the paired local runner processes were active:
+  - `scripts/local-runner-heartbeat.mjs --watch`
+  - `scripts/local-runner-execute.mjs --watch`
+  - `scripts/local-runner-packets.mjs --watch`
+- Created and approved a safe `project-catalog-sync` command through the command API.
+- Verified command `command_bec63803-dff9-4779-bede-1a5899e7cbd6` moved through the full lifecycle:
+  - `created` as `pending` / `blocked`
+  - `approved` as `queued`
+  - `claimed` by `411100-PCK39`
+  - `running`
+  - `succeeded`
+- Verified command result:
+  - `commandType`: `project-catalog-sync`
+  - `completedBy`: `411100-PCK39`
+  - `projectCount`: `16`
+  - `root`: `C:\Development\Projects`
+- Verified the Neon project catalog still contains 16 records and the synced `observedAt` timestamp updated to `2026-06-18T21:21:22.708Z`.
+- Browser-verified local Runtime on `http://127.0.0.1:3060`: the completed Project catalog sync appears above the prior Operations Library sync with result and audit trail visible.
+- Remaining next step: perform the same owner-approved sync from the hosted `ops.ridgepath.io` Runtime UI in an authenticated browser session.
