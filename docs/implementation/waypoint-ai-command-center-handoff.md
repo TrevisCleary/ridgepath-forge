@@ -186,6 +186,8 @@ Current runner behavior:
 
 - `npm.cmd run runner:heartbeat` writes a single local-runner heartbeat to Neon.
 - `npm.cmd run runner:start` runs the heartbeat loop every 60 seconds.
+- `npm.cmd run runner:execute` claims and executes one approved queued command through the local Forge API.
+- `npm.cmd run runner:execute:start` runs the approved-command executor loop every `RIDGEPATH_RUNNER_EXECUTE_SECONDS` seconds, defaulting to 15.
 - `npm.cmd run runner:queue` writes a heartbeat and reads approved queued commands once.
 - `npm.cmd run runner:queue:start` watches approved queued commands every `RIDGEPATH_RUNNER_QUEUE_SECONDS` seconds, defaulting to 60.
 - `npm.cmd run runner:sync-all` publishes Projects, Fabric, and Operations Library snapshots into Neon.
@@ -211,8 +213,8 @@ Current capabilities reported by the heartbeat:
 - `fabric-inventory`
 - `project-review`
 - `command-queue-read`
+- `approved-command-execution`
 - `local-actions-require-approval`
-- `execution-disabled`
 
 ## Command Queue Foundation
 
@@ -233,7 +235,17 @@ Current command queue behavior:
 - Claiming is available as a backend primitive for the next runner phase, not as enabled execution.
 - Command creation, updates, and claims write immutable `command_events` audit records.
 
-Do not add command execution until command leases, idempotency, allowed command types, result capture, and audit validation are exercised end to end.
+Approved command execution is now available through the local runner executor, not through hosted Vercel.
+
+Executor behavior:
+
+- Claims one approved queued command at a time.
+- Uses the existing local Forge API at `RIDGEPATH_LOCAL_FORGE_API`, defaulting to `http://127.0.0.1:3059`.
+- Supports an explicit allowlist: project sync, Fabric sync, Operations sync, project review, project start/stop/restart/take-over/git-sync, project-management initialization, portfolio draft creation, project registration, project description update, Fabric device update/remove, and project-folder open.
+- Writes `running`, `succeeded`, or `failed` back to Neon with command events.
+- Unsupported command types fail closed with an error.
+
+On 2026-06-18, `411100-PCK39` completed an end-to-end safe runner execution smoke test for `operations-library-sync`; the command was created, approved, claimed, executed, and marked `succeeded`.
 
 ## Hosted Project Catalog
 

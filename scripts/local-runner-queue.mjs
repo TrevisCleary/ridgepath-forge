@@ -52,7 +52,6 @@ function runnerIdentity() {
       "project-review",
       "command-queue-read",
       "local-actions-require-approval",
-      "execution-disabled",
     ],
     metadata: {
       nodeVersion: process.version,
