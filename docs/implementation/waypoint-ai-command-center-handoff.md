@@ -194,6 +194,8 @@ Current runner behavior:
 - `npm.cmd run runner:sync-projects` reads the local Forge API and publishes the hosted project catalog into Neon.
 - `npm.cmd run runner:sync-fabric` reads the local Forge API and publishes the hosted Ridge Fabric snapshot into Neon.
 - `npm.cmd run runner:sync-operations` reads the local Forge API and publishes the hosted Operations Library validation snapshot into Neon.
+- `npm.cmd run runner:packets` claims one ready execution packet and writes a local Codex handoff artifact under `data/command-center/execution-packet-handoffs`.
+- `npm.cmd run runner:packets:start` watches ready execution packets every `RIDGEPATH_RUNNER_PACKET_SECONDS` seconds, defaulting to 60.
 - The runner loads `.env.local` or `.env` and uses `COMMAND_CENTER_DATABASE_URL`.
 - Runner identity defaults to the Windows hostname and can be overridden with:
   - `RIDGEPATH_RUNNER_ID`
@@ -214,6 +216,8 @@ Current capabilities reported by the heartbeat:
 - `project-review`
 - `command-queue-read`
 - `approved-command-execution`
+- `execution-packet-claim`
+- `codex-handoff`
 - `local-actions-require-approval`
 
 ## Command Queue Foundation
@@ -263,6 +267,7 @@ Current behavior:
 - `/api/command-center/status` includes `executionPacketCount` and `openExecutionPacketCount`.
 - The Approval Queue displays packet readiness, claim owner, and latest packet event on approved proposals.
 - Packet constraints include the proposal summary, why-now context, rollback notes, validation plan, and owner feedback.
+- The local packet runner can claim a ready packet and write a Codex-ready handoff prompt locally without making project code changes itself.
 
 Execution packets are the handoff boundary between owner approval and Codex/runner implementation. They should be consumed only after approval and should preserve the selected branch policy.
 

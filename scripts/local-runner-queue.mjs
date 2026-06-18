@@ -51,6 +51,8 @@ function runnerIdentity() {
       "fabric-inventory",
       "project-review",
       "command-queue-read",
+      "execution-packet-claim",
+      "codex-handoff",
       "local-actions-require-approval",
     ],
     metadata: {

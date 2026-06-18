@@ -50,6 +50,8 @@ async function sendHeartbeat() {
       "project-review",
       "command-queue-read",
       "approved-command-execution",
+      "execution-packet-claim",
+      "codex-handoff",
       "local-actions-require-approval",
     ],
     metadata: {
