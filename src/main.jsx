@@ -820,31 +820,6 @@ function App() {
   );
 }
 
-function CommandPlaceholder({ title, icon, detail, rows, actionLabel = "", onAction }) {
-  return (
-    <section className="command-placeholder">
-      <div className="section-title">
-      {icon}
-        <h2>{title}</h2>
-      </div>
-      <p>{detail}</p>
-      <div className="runtime-summary">
-        {rows.map(([label, value]) => (
-          <div className="status-line" key={label}>
-            <span>{label}</span>
-            <strong>{value}</strong>
-          </div>
-        ))}
-      </div>
-      {actionLabel ? (
-        <button className="secondary-action primary-secondary" type="button" onClick={onAction}>
-          {actionLabel}
-        </button>
-      ) : null}
-    </section>
-  );
-}
-
 function viewTitle(activeView, selected) {
   if (selected) return selected.name;
   const titles = {
