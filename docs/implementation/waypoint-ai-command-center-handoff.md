@@ -218,7 +218,7 @@ Current capabilities reported by the heartbeat:
 
 ## Command Queue Foundation
 
-Hosted Ops now has a command-request queue, but local execution remains disabled.
+Hosted Ops has a command-request queue backed by local runner execution.
 
 Current command queue behavior:
 
@@ -231,8 +231,8 @@ Current command queue behavior:
 - New requests require an owner reason and start as `approvalStatus: pending` and `executionStatus: blocked`.
 - Owner approval moves a blocked request to `executionStatus: queued`.
 - The Runtime page shows the queue and allows pending requests to be approved or cancelled.
-- The local runner monitor polls/read-lists queued requests but does not claim or execute them by default.
-- Claiming is available as a backend primitive for the next runner phase, not as enabled execution.
+- The local runner monitor can read-list queued requests without executing them.
+- The local runner executor can claim approved queued requests and run allowlisted commands through the local Forge API.
 - Command creation, updates, and claims write immutable `command_events` audit records.
 
 Approved command execution is now available through the local runner executor, not through hosted Vercel.
@@ -256,7 +256,7 @@ Current behavior:
 - Local Forge remains responsible for filesystem discovery.
 - `runner:sync-projects` copies the discovered local project snapshot into Neon.
 - Hosted Ops reads the Neon project catalog and can display Projects without direct filesystem access.
-- Local start/stop/open-folder actions remain disabled until routed through approved runner commands.
+- Local start/stop/open-folder actions are routed through approved runner commands.
 - On 2026-06-18, `411100-PCK39` synced 16 projects from `C:\Development\Projects`.
 
 ## Hosted Fabric Snapshot

@@ -23,6 +23,7 @@ const COMMAND_TYPES = [
 
 export function CommandQueue({
   commands,
+  events = [],
   runners,
   projects,
   busy,
@@ -30,6 +31,15 @@ export function CommandQueue({
   onUpdateCommand,
 }) {
   const activeRunners = useMemo(() => runners.filter((runner) => runner.paired), [runners]);
+  const eventsByCommand = useMemo(() => {
+    const map = new Map();
+    for (const event of events) {
+      const current = map.get(event.commandId) || [];
+      current.push(event);
+      map.set(event.commandId, current);
+    }
+    return map;
+  }, [events]);
   const [draft, setDraft] = useState({
     runnerId: activeRunners[0]?.id || runners[0]?.id || "",
     commandType: "project-review",
@@ -61,7 +71,7 @@ export function CommandQueue({
         <div>
           <p className="eyebrow">Local Controller</p>
           <h2 id="command-queue-title">Command Queue</h2>
-          <p>Approval and audit records for local runner actions. Execution is intentionally disabled in this phase.</p>
+          <p>Owner-approved local actions are claimed by the paired runner, executed through the local Forge API, and written back with audit events.</p>
         </div>
         <div className="queue-runner-summary">
           <span>{activeRunners.length} active</span>
@@ -107,7 +117,10 @@ export function CommandQueue({
       </form>
 
       <div className="command-queue-list">
-        {visibleCommands.length ? visibleCommands.map((command) => (
+        {visibleCommands.length ? visibleCommands.map((command) => {
+          const commandEvents = eventsByCommand.get(command.id) || [];
+          const latestEvent = commandEvents[0];
+          return (
           <article className="command-request-card" key={command.id}>
             <div>
               <div className="command-request-title">
@@ -122,6 +135,29 @@ export function CommandQueue({
                 <span>{runnerLabel(command, runners)}</span>
                 <span>{formatTime(command.updatedAt || command.createdAt)}</span>
               </div>
+              {command.error ? (
+                <div className="command-request-error">
+                  <strong>Error</strong>
+                  <span>{command.error}</span>
+                </div>
+              ) : null}
+              {hasResult(command) ? (
+                <div className="command-request-result">
+                  <strong>Result</strong>
+                  <code>{resultSummary(command.result)}</code>
+                </div>
+              ) : null}
+              {commandEvents.length ? (
+                <div className="command-event-list">
+                  <strong>Audit</strong>
+                  {commandEvents.slice(0, 4).map((event) => (
+                    <span key={event.id}>
+                      {formatStatus(event.eventType)} by {event.actor || "system"} · {formatTime(event.createdAt)}
+                    </span>
+                  ))}
+                  {latestEvent?.detail?.execution ? <em>{latestEvent.detail.execution}</em> : null}
+                </div>
+              ) : null}
             </div>
             <div className="command-request-actions">
               {command.approvalStatus === "pending" ? (
@@ -135,12 +171,14 @@ export function CommandQueue({
                     Cancel
                   </button>
                 </>
+              ) : ["queued", "claimed", "running"].includes(command.executionStatus) ? (
+                <span><Clock size={15} /> Awaiting runner</span>
               ) : (
-                <span><Clock size={15} /> Execution disabled</span>
+                <span><Clock size={15} /> {formatStatus(command.executionStatus)}</span>
               )}
             </div>
           </article>
-        )) : (
+        ); }) : (
           <div className="empty compact-empty">No command requests have been queued yet.</div>
         )}
       </div>
@@ -159,6 +197,26 @@ function runnerLabel(command, runners) {
 
 function formatStatus(value) {
   return String(value || "").replaceAll("-", " ");
+}
+
+function hasResult(command) {
+  return command.result && typeof command.result === "object" && Object.keys(command.result).length > 0;
+}
+
+function resultSummary(result) {
+  if (!result || typeof result !== "object") return "";
+  const payload = result.result && typeof result.result === "object" ? result.result : result;
+  const summary = {
+    commandType: result.commandType,
+    completedBy: result.completedBy,
+    completedAt: result.completedAt,
+    projectCount: payload.projectCount,
+    deviceCount: payload.deviceCount,
+    validationStatus: payload.validationStatus,
+    proposalCount: Array.isArray(payload.proposals) ? payload.proposals.length : undefined,
+  };
+  const entries = Object.fromEntries(Object.entries(summary).filter(([, value]) => value !== undefined && value !== ""));
+  return JSON.stringify(Object.keys(entries).length ? entries : payload);
 }
 
 function formatTime(value) {

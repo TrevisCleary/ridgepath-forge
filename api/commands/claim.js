@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     const command = await claimNextCommandForRunner(body.runnerId);
     return json(res, {
       command,
-      execution: "disabled",
+      execution: command ? "claimed" : "idle",
     });
   } catch (error) {
     return json(res, { error: error.message || "Could not claim command request." }, 400);

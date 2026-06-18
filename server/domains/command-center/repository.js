@@ -969,7 +969,7 @@ export async function claimNextCommandForRunner(runnerId = "") {
     await appendCommandEvent(command.id, "claimed", {
       runnerId: normalizedRunnerId,
       claimExpiresAt: command.claimExpiresAt,
-      execution: "disabled",
+      execution: "claimed",
     }, normalizedRunnerId);
     return command;
   }
@@ -993,7 +993,7 @@ export async function claimNextCommandForRunner(runnerId = "") {
   await appendCommandEvent(commands[index].id, "claimed", {
     runnerId: normalizedRunnerId,
     claimExpiresAt,
-    execution: "disabled",
+    execution: "claimed",
   }, normalizedRunnerId);
   return commands[index];
 }

@@ -31,6 +31,7 @@ import { apiJson } from "./lib/api.js";
 import "./styles.css";
 
 const POLL_MS = 5000;
+const COMMAND_CENTER_POLL_MS = 10000;
 const HOSTED_ACTION_COMMANDS = {
   start: "start-project",
   stop: "stop-project",
@@ -61,6 +62,7 @@ function App() {
   const [approvalEvents, setApprovalEvents] = useState([]);
   const [localRunners, setLocalRunners] = useState([]);
   const [commandRequests, setCommandRequests] = useState([]);
+  const [commandEvents, setCommandEvents] = useState([]);
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
   const [demoPortalProjectId, setDemoPortalProjectId] = useState("");
@@ -103,6 +105,7 @@ function App() {
     setApprovalEvents(proposalData.approvalEvents || []);
     setLocalRunners(runnerData.runners || []);
     setCommandRequests(commandData.commands || []);
+    setCommandEvents(commandData.events || []);
     return { status, runData, proposalData, runnerData, commandData };
   }
 
@@ -111,8 +114,14 @@ function App() {
     loadOperationsLibraryStatus();
     loadRidgeFabricRegistry().catch((error) => setActionError(error.message));
     loadCommandCenterState().catch((error) => setActionError(error.message));
-    const timer = window.setInterval(loadProjects, POLL_MS);
-    return () => window.clearInterval(timer);
+    const projectTimer = window.setInterval(loadProjects, POLL_MS);
+    const commandCenterTimer = window.setInterval(() => {
+      loadCommandCenterState().catch((error) => setActionError(error.message));
+    }, COMMAND_CENTER_POLL_MS);
+    return () => {
+      window.clearInterval(projectTimer);
+      window.clearInterval(commandCenterTimer);
+    };
   }, []);
 
   useEffect(() => {
@@ -392,7 +401,7 @@ function App() {
         body: JSON.stringify(values),
       });
       await loadCommandCenterState();
-      setActionNotice(`Queued command request: ${command.commandType}. Execution remains disabled until the runner execution contract is complete.`);
+      setActionNotice(`Queued command request: ${command.commandType}. Approve it in Runtime for the paired runner to execute.`);
       return command;
     } catch (error) {
       setActionError(error.message || "Could not queue command request.");
@@ -633,6 +642,7 @@ function App() {
       ) : activeView === "runtime" ? (
         <CommandQueue
           commands={commandRequests}
+          events={commandEvents}
           runners={localRunners}
           projects={projects}
           busy={busy}

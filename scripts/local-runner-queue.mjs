@@ -81,7 +81,7 @@ async function tick() {
       lastSeenAt: runner.lastSeenAt,
     },
     queuedCommandCount: commands.length,
-    execution: "disabled",
+    execution: "monitor-only",
     commands: summary,
   }));
 }
