@@ -15,6 +15,7 @@ import {
 } from "./domains/ridge-fabric/repository.js";
 import {
   commandCenterStatus,
+  createProposal,
   createProjectReviewRun,
   listAgentRuns,
   listApprovalEvents,
@@ -171,6 +172,7 @@ const DEFAULT_SETTINGS = {
     publicBaseUrl: "https://ridgepath.io/demos",
     passwordLength: 18,
     defaultExpiryDays: 45,
+    defaultAccessTtlHours: 72,
   },
 };
 const WORK_OWNERS = new Set(
@@ -1475,6 +1477,75 @@ function hashDemoPassword(password) {
   return `scrypt:${salt}:${hash}`;
 }
 
+function normalizeDemoEmail(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
+function hashDemoAccessToken(rawToken) {
+  return `sha256:${crypto.createHash("sha256").update(String(rawToken || ""), "utf8").digest("hex")}`;
+}
+
+function generateDemoAccessToken() {
+  return crypto.randomBytes(32).toString("base64url");
+}
+
+function randomDemoId(prefix = "tok") {
+  return `${prefix}_${crypto.randomBytes(16).toString("hex")}`;
+}
+
+const DEMO_PROVISIONING_STATES = new Set([
+  "pending_vercel_domain",
+  "pending_dns_validation",
+  "waiting_for_vercel_ssl",
+  "pending_cloudflare_gate",
+  "ready",
+  "failed",
+]);
+
+function normalizeDemoProvisioningStatus(value, existing, hasDeploymentUrl) {
+  const candidate = String(value || existing?.provisioning_status || existing?.provisioningStatus || "").trim();
+  if (DEMO_PROVISIONING_STATES.has(candidate)) return candidate;
+  if (existing) return "ready";
+  return hasDeploymentUrl ? "pending_vercel_domain" : "pending_vercel_domain";
+}
+
+function demoReadyToShare(status) {
+  return status === "ready";
+}
+
+function parseApprovedDemoEmails(input = {}, primaryEmail = "", existing = null) {
+  const rawValues = [
+    primaryEmail,
+    ...(Array.isArray(input.approvedEmails) ? input.approvedEmails : String(input.approvedEmails || "").split(/[\n,;]/)),
+    ...(Array.isArray(existing?.approvedEmails) ? existing.approvedEmails.map((entry) => typeof entry === "string" ? entry : entry?.email) : []),
+  ];
+  return rawValues
+    .map((email) => normalizeDemoEmail(email))
+    .filter((email, index, emails) => email && validEmail(email) && emails.indexOf(email) === index);
+}
+
+function demoApprovedEmailsText(emails = []) {
+  return emails.join("\n");
+}
+
+function demoPortalAccessTtlHours(demoPortal, value, existing = null) {
+  const candidate = Number(value ?? existing?.token_ttl_hours ?? existing?.tokenTtlHours ?? demoPortal.defaultAccessTtlHours ?? 72);
+  return Math.max(1, Math.min(720, Number.isFinite(candidate) ? Math.round(candidate) : 72));
+}
+
+function demoPortalOrigin(settings) {
+  const base = String(settings.publicBaseUrl || DEFAULT_SETTINGS.demoPortalIntegration.publicBaseUrl || "https://ridgepath.io/demos");
+  try {
+    return new URL(base).origin;
+  } catch {
+    return "https://ridgepath.io";
+  }
+}
+
+function demoPortalAccessLink(settings, rawToken) {
+  return `${demoPortalOrigin(settings)}/api/demo-token-exchange?token=${encodeURIComponent(rawToken)}`;
+}
+
 function demoPortalPublicUrl(settings, slugValue) {
   const base = String(settings.publicBaseUrl || DEFAULT_SETTINGS.demoPortalIntegration.publicBaseUrl).replace(/\/+$/, "");
   return `${base}/${slugValue}`;
@@ -1482,7 +1553,7 @@ function demoPortalPublicUrl(settings, slugValue) {
 
 function demoPortalDeepLink(settings, clientSlug, siteSlug = "") {
   const url = demoPortalPublicUrl(settings, clientSlug);
-  return siteSlug ? `${url}?site=${encodeURIComponent(siteSlug)}` : url;
+  return siteSlug ? `${url}/sites/${encodeURIComponent(siteSlug)}` : url;
 }
 
 function demoPortalConfigDefaults(project, demoPortal = DEFAULT_SETTINGS.demoPortalIntegration) {
@@ -1490,14 +1561,18 @@ function demoPortalConfigDefaults(project, demoPortal = DEFAULT_SETTINGS.demoPor
   const siteSlug = demoSlug(project.folderName || project.id);
   const dashboard = project.projectManagement?.dashboard || {};
   const summary = dashboard.summary || {};
+  const demoSiteUrl = isProductionHttpUrl(project.productionUrl) ? project.productionUrl : "";
   return {
     clientName: displayProjectTitle(project),
     clientSlug,
     clientEmail: "",
     organizationName: "",
+    approvedEmails: "",
     siteTitle: displayProjectTitle(project),
     siteSlug,
-    projectStatus: project.productionUrl ? "Production demo linked" : "Needs production deployment URL",
+    demoSiteUrl,
+    presentationMode: "iframe",
+    projectStatus: demoSiteUrl ? "Production demo linked" : "Needs production deployment URL",
     projectPhase: sentence(summary.currentPhase, "Needs review"),
     progress: demoProgressFromDashboard(project),
     updateMessage: sentence(
@@ -1505,6 +1580,9 @@ function demoPortalConfigDefaults(project, demoPortal = DEFAULT_SETTINGS.demoPor
       `${displayProjectTitle(project)} was linked to the RidgePath demo portal from Forge.`,
     ),
     active: true,
+    accessMode: "token",
+    tokenTtlHours: Number(demoPortal.defaultAccessTtlHours || 72),
+    provisioningStatus: "pending_vercel_domain",
     publicDemoUrl: demoPortalPublicUrl(demoPortal, clientSlug),
     deepLink: demoPortalDeepLink(demoPortal, clientSlug, siteSlug),
   };
@@ -1520,36 +1598,54 @@ function normalizeDemoPortalConfig(project, demoPortal, input = {}, existing = n
   }
   const progress = Math.max(0, Math.min(100, Number(input.progress ?? defaults.progress) || 0));
   const active = input.active === undefined ? true : Boolean(input.active);
+  const demoSiteUrl = String(input.demoSiteUrl || existing?.deployment_url || existing?.deploymentUrl || defaults.demoSiteUrl || "").trim();
+  if (demoSiteUrl && !isProductionHttpUrl(demoSiteUrl)) {
+    throw new Error("Demo site URL must be a production https URL, not localhost or a private network URL.");
+  }
+  const approvedEmails = parseApprovedDemoEmails(input, clientEmail, existing);
+  const tokenTtlHours = demoPortalAccessTtlHours(demoPortal, input.tokenTtlHours, existing);
+  const provisioningStatus = normalizeDemoProvisioningStatus(input.provisioningStatus, existing, Boolean(demoSiteUrl));
   return {
     clientName: sentence(input.clientName || existing?.client_name || existing?.clientName, defaults.clientName),
     clientSlug,
     clientEmail,
     organizationName: String(input.organizationName || existing?.organization_name || existing?.organizationName || "").trim(),
+    approvedEmails,
+    approvedEmailsText: demoApprovedEmailsText(approvedEmails),
     siteTitle: sentence(input.siteTitle, defaults.siteTitle),
     siteSlug,
+    demoSiteUrl,
+    presentationMode: ["external", "iframe", "proxy", "hosted"].includes(String(input.presentationMode || ""))
+      ? String(input.presentationMode)
+      : "iframe",
     projectStatus: sentence(input.projectStatus, defaults.projectStatus),
     projectPhase: sentence(input.projectPhase, defaults.projectPhase),
     progress,
     updateMessage: sentence(input.updateMessage, defaults.updateMessage),
     active,
+    accessMode: "token",
+    tokenTtlHours,
+    provisioningStatus,
     publicDemoUrl: demoPortalPublicUrl(demoPortal, clientSlug),
     deepLink: demoPortalDeepLink(demoPortal, clientSlug, siteSlug),
   };
 }
 
-function demoEmailDraft(config, generatedPassword = "") {
+function demoEmailDraft(config) {
   const greeting = config.clientName ? `Hi ${config.clientName},` : "Hi,";
-  const credentialLine = generatedPassword
-    ? `Temporary password: ${generatedPassword}`
-    : "Use your existing RidgePath demo portal password. If you need a reset, reply to this email.";
   const subject = `Your RidgePath demo workspace is ready`;
   const body = [
     greeting,
     "",
-    "Your RidgePath demo workspace is ready for review.",
+    demoReadyToShare(config.provisioningStatus || "ready")
+      ? "Your RidgePath demo workspace is ready for review."
+      : "Your RidgePath demo workspace is being prepared for review.",
     "",
-    `Workspace link: ${config.deepLink || config.publicDemoUrl}`,
-    credentialLine,
+    demoReadyToShare(config.provisioningStatus || "ready")
+      ? "Use the private access link sent to your approved email address to open the workspace."
+      : "RidgePath will send a private access link after DNS and SSL provisioning are complete.",
+    "",
+    `Workspace: ${config.clientName || config.clientSlug || "RidgePath demo"}`,
     "",
     "This link opens your client-facing project workspace where demo sites, status, and updates are collected.",
     "",
@@ -1557,6 +1653,96 @@ function demoEmailDraft(config, generatedPassword = "") {
     "RidgePath Technologies",
   ].join("\n");
   return { to: config.clientEmail, subject, body };
+}
+
+function demoCloudflareHost(slugValue) {
+  const hostTemplate = process.env.DEMO_CLOUDFLARE_HOST_TEMPLATE || "{slug}.ridgepath.io";
+  return hostTemplate.replaceAll("{slug}", demoSlug(slugValue));
+}
+
+function demoCloudflareProvisioningPrompt({ record, site }) {
+  const allowedEmails = [record.clientEmail, process.env.DEMO_CLOUDFLARE_OWNER_EMAIL || "trevis.cleary@gmail.com"]
+    .map((email) => String(email || "").trim().toLowerCase())
+    .filter((email, index, emails) => validEmail(email) && emails.indexOf(email) === index);
+  const payload = {
+    clientSlug: record.slug,
+    clientName: record.clientName,
+    hostname: demoCloudflareHost(record.slug),
+    accessAppName: `${record.clientName} Demo Gate`,
+    allowedEmails,
+    sourceProjectId: record.sourceProjectId,
+    demoSiteUrl: record.deploymentUrl || site.url,
+    presentationMode: site.presentationMode,
+    publicDemoUrl: `https://${demoCloudflareHost(record.slug)}/`,
+  };
+  return [
+    "Provision or update the optional Cloudflare gate for this RidgePath Forge demo record.",
+    "",
+    "Use the Cloudflare connector/API with the RidgePath Cloudflare account. Do not modify RidgePath website auth routes, and do not enable proxying until Vercel DNS validation and SSL are complete.",
+    "",
+    "Required Cloudflare state:",
+    "- Confirm the target hostname already validates directly at Vercel with working HTTPS.",
+    "- Then enable or confirm proxied DNS for the target hostname in the `ridgepath.io` zone.",
+    "- Ensure a Worker/Pages route can serve or proxy the hostname below.",
+    "- If optional hardening is required, ensure a Cloudflare Access self-hosted application exists for the hostname.",
+    "- Use the One-time PIN identity provider.",
+    "- Allow only the emails listed in `allowedEmails`.",
+    "- Verify an anonymous request reaches the RidgePath token access page or, when Access is enabled, redirects to Cloudflare Access.",
+    "",
+    "Provisioning payload:",
+    "```json",
+    JSON.stringify(payload, null, 2),
+    "```",
+  ].join("\n");
+}
+
+async function createDemoCloudflareProvisioningProposal(project, record, site) {
+  const hostname = demoCloudflareHost(record.slug);
+  return createProposal({
+    projectId: project.id,
+    title: `Provision Cloudflare demo gate for ${record.clientName}`,
+    summary: `Create or update ${hostname} with a per-client Cloudflare Access policy and one-time PIN login.`,
+    whyNow: "The client demo workspace is registered in Forge; the shareable client URL should be protected at the Cloudflare edge instead of by RidgePath website auth routes.",
+    risk: "low",
+    confidence: "high",
+    suggestedExecutor: "codex-cloudflare",
+    targetBranchPolicy: "no-code-change",
+    validationPlan: [
+      `Confirm https://${hostname}/ redirects anonymous visitors to Cloudflare Access`,
+      "Confirm the Access policy includes the intended client email list",
+      "Confirm the demo hostname resolves through proxied Cloudflare DNS",
+      "Record the Cloudflare app ID, hostname, and validation result back in Forge activity",
+    ],
+    rollbackPlan: `Disable or delete the Cloudflare Access application for ${hostname}, then remove the hostname route if the demo should no longer be shared.`,
+    evidence: [
+      { label: "Client slug", value: record.slug },
+      { label: "Client email", value: record.clientEmail || "not configured" },
+      { label: "Demo site URL", value: record.deploymentUrl || site.url || "not configured" },
+      { label: "Cloudflare hostname", value: hostname },
+    ],
+    ownerNotes: demoCloudflareProvisioningPrompt({ record, site }),
+  });
+}
+
+async function queueDemoCloudflareProvisioning(project, record, site) {
+  if (record.provisioningStatus !== "pending_cloudflare_gate") {
+    return null;
+  }
+  if (String(process.env.DEMO_CLOUDFLARE_QUEUE || "on").toLowerCase() === "off") {
+    return null;
+  }
+  try {
+    return await createDemoCloudflareProvisioningProposal(project, record, site);
+  } catch (error) {
+    await appendActivity(project.id, "demo-cloudflare-provisioning-queue-failed", "Cloudflare demo provisioning proposal was not created", {
+      clientSlug: record.slug,
+      error: error.message,
+    });
+    return {
+      queued: false,
+      error: error.message,
+    };
+  }
 }
 
 async function sendDemoPortalEmail(draft) {
@@ -1599,6 +1785,84 @@ async function sendDemoPortalEmail(draft) {
     provider: "resend",
     id: payload?.id || "",
     message: "Connection email sent.",
+  };
+}
+
+function demoPortalEmailConfigured() {
+  return Boolean(process.env.RESEND_API_KEY || process.env.DEMO_EMAIL_API_KEY);
+}
+
+function demoAccessEmailDraft(config, recipientEmail, accessLink, expiresAt) {
+  const subject = "Your RidgePath demo access link";
+  const body = [
+    config.clientName ? `Hi ${config.clientName},` : "Hi,",
+    "",
+    "Use the private link below to open your RidgePath demo workspace.",
+    "",
+    accessLink,
+    "",
+    `This link expires ${new Date(expiresAt).toLocaleString()}. If it expires, request a fresh link from the demo access page using this approved email address.`,
+    "",
+    "Thank you,",
+    "RidgePath Technologies",
+  ].join("\n");
+  return { to: recipientEmail, subject, body };
+}
+
+async function listDemoApprovedEmails(sql, clientSlug) {
+  const rows = await sql`
+    select email, status, approved_by_email, created_at, updated_at
+    from demo_client_approved_emails
+    where client_slug = ${clientSlug}
+    order by email asc
+  `;
+  return rows.map((row) => ({
+    email: row.email,
+    status: row.status,
+    approvedByEmail: row.approved_by_email,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+async function createDemoPortalAccessToken(record, demoPortal, recipientEmail) {
+  const sql = demoPortalDb();
+  if (!sql) {
+    return { created: false, reason: "database-required" };
+  }
+  const rawToken = generateDemoAccessToken();
+  const tokenHash = hashDemoAccessToken(rawToken);
+  const ttlHours = demoPortalAccessTtlHours(demoPortal, record.tokenTtlHours);
+  const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000).toISOString();
+  await sql`
+    insert into demo_client_access_tokens (
+      id,
+      client_slug,
+      email,
+      token_hash,
+      status,
+      expires_at
+    )
+    values (
+      ${randomDemoId()},
+      ${record.clientSlug},
+      ${recipientEmail},
+      ${tokenHash},
+      'active',
+      ${expiresAt}
+    )
+  `;
+  await sql`
+    update demo_clients
+    set invite_token_hash = ${tokenHash},
+        invite_expires_at = ${expiresAt},
+        updated_at = now()
+    where slug = ${record.clientSlug}
+  `;
+  return {
+    created: true,
+    expiresAt,
+    accessLink: demoPortalAccessLink(demoPortal, rawToken),
   };
 }
 
@@ -1670,7 +1934,7 @@ function serializableDemoClientRecord(record) {
 }
 
 function demoPortalDatabaseUrl() {
-  return process.env.DEMO_DATABASE_URL || process.env.DATABASE_URL || "";
+  return process.env.RIDGEPATH_DEMO_DATABASE_URL || process.env.DEMO_DATABASE_URL || process.env.DATABASE_URL || "";
 }
 
 function demoPortalDb() {
@@ -1688,7 +1952,24 @@ async function existingDemoClientFromDb(sql, projectId, slugValue) {
     order by updated_at desc
     limit 1
   `;
-  return rows[0] || null;
+  const client = rows[0] || null;
+  if (!client) return null;
+  const approvedRows = await sql`
+    select email, status, approved_by_email, created_at, updated_at
+    from demo_client_approved_emails
+    where client_slug = ${client.slug}
+    order by email asc
+  `;
+  return {
+    ...client,
+    approvedEmails: approvedRows.map((row) => ({
+      email: row.email,
+      status: row.status,
+      approvedByEmail: row.approved_by_email,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    })),
+  };
 }
 
 async function upsertDemoPortalDatabaseRecord(project, demoPortal, record, site, update, generatedPassword) {
@@ -1708,6 +1989,11 @@ async function upsertDemoPortalDatabaseRecord(project, demoPortal, record, site,
       latest_commit,
       deployment_url,
       public_demo_url,
+      access_mode,
+      token_ttl_hours,
+      provisioning_status,
+      provisioning_detail,
+      ready_at,
       client_email,
       organization_name,
       invite_token_hash,
@@ -1730,6 +2016,11 @@ async function upsertDemoPortalDatabaseRecord(project, demoPortal, record, site,
       ${record.latestCommit},
       ${record.deploymentUrl},
       ${record.publicDemoUrl},
+      ${record.accessMode},
+      ${record.tokenTtlHours},
+      ${record.provisioningStatus},
+      ${JSON.stringify(record.provisioningDetail || {})}::jsonb,
+      ${record.readyAt},
       ${record.clientEmail},
       ${record.organizationName},
       ${record.inviteTokenHash},
@@ -1754,6 +2045,11 @@ async function upsertDemoPortalDatabaseRecord(project, demoPortal, record, site,
       latest_commit = excluded.latest_commit,
       deployment_url = excluded.deployment_url,
       public_demo_url = excluded.public_demo_url,
+      access_mode = excluded.access_mode,
+      token_ttl_hours = excluded.token_ttl_hours,
+      provisioning_status = excluded.provisioning_status,
+      provisioning_detail = excluded.provisioning_detail,
+      ready_at = coalesce(excluded.ready_at, demo_clients.ready_at),
       client_email = excluded.client_email,
       organization_name = excluded.organization_name,
       invite_token_hash = coalesce(excluded.invite_token_hash, demo_clients.invite_token_hash),
@@ -1765,6 +2061,29 @@ async function upsertDemoPortalDatabaseRecord(project, demoPortal, record, site,
       updated_at = now()
   `;
 
+  for (const email of record.approvedEmails || []) {
+    await sql`
+      insert into demo_client_approved_emails (
+        client_slug,
+        email,
+        status,
+        approved_by_email,
+        updated_at
+      )
+      values (
+        ${record.slug},
+        ${email},
+        'active',
+        ${process.env.DEMO_APPROVED_BY_EMAIL || "forge@ridgepath.io"},
+        now()
+      )
+      on conflict (client_slug, email) do update set
+        status = 'active',
+        approved_by_email = coalesce(demo_client_approved_emails.approved_by_email, excluded.approved_by_email),
+        updated_at = now()
+    `;
+  }
+
   await sql`
     insert into demo_sites (
       client_slug,
@@ -1772,6 +2091,7 @@ async function upsertDemoPortalDatabaseRecord(project, demoPortal, record, site,
       title,
       description,
       url,
+      presentation_mode,
       phase,
       status,
       progress,
@@ -1785,6 +2105,7 @@ async function upsertDemoPortalDatabaseRecord(project, demoPortal, record, site,
       ${site.title},
       ${site.description},
       ${site.url},
+      ${site.presentationMode},
       ${site.phase},
       ${site.status},
       ${site.progress},
@@ -1796,6 +2117,7 @@ async function upsertDemoPortalDatabaseRecord(project, demoPortal, record, site,
       title = excluded.title,
       description = excluded.description,
       url = excluded.url,
+      presentation_mode = excluded.presentation_mode,
       phase = excluded.phase,
       status = excluded.status,
       progress = excluded.progress,
@@ -1838,28 +2160,35 @@ async function upsertDemoPortalDatabaseRecord(project, demoPortal, record, site,
       storage: "neon",
       clientSlug: record.slug,
       publicDemoUrl: record.publicDemoUrl,
-      passwordGenerated: Boolean(generatedPassword),
+      accessMode: record.accessMode,
+      provisioningStatus: record.provisioningStatus,
     },
   );
+  const cloudflareProvisioning = await queueDemoCloudflareProvisioning(project, record, site);
+  const readyToShare = demoReadyToShare(record.provisioningStatus);
 
   return {
     ok: true,
     storage: "neon",
     created,
-    passwordGenerated: Boolean(generatedPassword),
-    generatedPassword,
     registryPath: "Neon database",
     clientSlug: record.slug,
-      clientName: record.clientName,
-      clientEmail: record.clientEmail,
-      organizationName: record.organizationName,
-      publicDemoUrl: record.publicDemoUrl,
-      deepLink: record.deepLink,
-      siteUrl: site.url,
-      deploymentUrl: record.deploymentUrl,
-      productionReady: Boolean(record.deploymentUrl),
-      expiresAt: record.expiresAt,
-      emailDraft: demoEmailDraft(record, generatedPassword),
+    clientName: record.clientName,
+    clientEmail: record.clientEmail,
+    organizationName: record.organizationName,
+    approvedEmails: record.approvedEmails || [],
+    accessMode: record.accessMode,
+    tokenTtlHours: record.tokenTtlHours,
+    provisioningStatus: record.provisioningStatus,
+    readyToShare,
+    publicDemoUrl: record.publicDemoUrl,
+    deepLink: readyToShare ? record.deepLink : "",
+    siteUrl: site.url,
+    deploymentUrl: record.deploymentUrl,
+    productionReady: Boolean(record.deploymentUrl),
+    expiresAt: record.expiresAt,
+    emailDraft: demoEmailDraft(record),
+    cloudflareProvisioning,
   };
 }
 
@@ -1907,6 +2236,10 @@ async function demoPortalConfiguration(project) {
       clientName: existing.clientName || existing.client_name,
       clientEmail: existing.clientEmail || existing.client_email || "",
       organizationName: existing.organizationName || existing.organization_name || "",
+      approvedEmails: parseApprovedDemoEmails({}, existing.clientEmail || existing.client_email || "", existing),
+      tokenTtlHours: existing.tokenTtlHours || existing.token_ttl_hours || Number(demoPortal.defaultAccessTtlHours || 72),
+      accessMode: existing.accessMode || existing.access_mode || "token",
+      provisioningStatus: existing.provisioningStatus || existing.provisioning_status || "ready",
       publicDemoUrl: existing.publicDemoUrl || existing.public_demo_url || config.publicDemoUrl,
       lastInviteSentAt: existing.lastInviteSentAt || existing.last_invite_sent_at || "",
       accessResetAt: existing.accessResetAt || existing.access_reset_at || "",
@@ -1928,13 +2261,21 @@ async function linkProjectToDemoPortal(project, input = {}, options = {}) {
   const generatedPassword = existingPasswordHash && !shouldResetAccess ? "" : generateDemoPassword(demoPortal.passwordLength);
   const passwordHash = existingPasswordHash || hashDemoPassword(generatedPassword);
   const resolvedPasswordHash = shouldResetAccess && generatedPassword ? hashDemoPassword(generatedPassword) : passwordHash;
-  const productionDeploymentUrl = isProductionHttpUrl(project.productionUrl) ? project.productionUrl : "";
+  const productionDeploymentUrl = isProductionHttpUrl(config.demoSiteUrl)
+    ? config.demoSiteUrl
+    : isProductionHttpUrl(project.productionUrl)
+      ? project.productionUrl
+      : "";
+  const readyAt = config.provisioningStatus === "ready"
+    ? (existing?.readyAt || existing?.ready_at || timestamp)
+    : null;
   const expiry = existing?.expiresAt || existing?.expires_at || new Date(now.getTime() + (Number(demoPortal.defaultExpiryDays || 45) * 24 * 60 * 60 * 1000)).toISOString();
   const site = {
     id: config.siteSlug,
     title: config.siteTitle,
     description: sentence(project.description, "Current website demo linked from RidgePath Forge."),
-    url: projectDemoSiteUrl(project, config.publicDemoUrl),
+    url: productionDeploymentUrl || projectDemoSiteUrl(project, config.publicDemoUrl),
+    presentationMode: config.presentationMode,
     phase: config.projectPhase,
     status: config.projectStatus,
     progress: config.progress,
@@ -1953,6 +2294,7 @@ async function linkProjectToDemoPortal(project, input = {}, options = {}) {
     clientName: config.clientName,
     clientEmail: config.clientEmail,
     organizationName: config.organizationName,
+    approvedEmails: config.approvedEmails,
     status: config.active ? "active" : "inactive",
     passwordHash: resolvedPasswordHash,
     forcePasswordUpdate: shouldResetAccess,
@@ -1961,6 +2303,21 @@ async function linkProjectToDemoPortal(project, input = {}, options = {}) {
     branch: project.git?.branch || existing?.branch || "",
     latestCommit: await runCapture("git.exe", ["rev-parse", "--short", "HEAD"], project.path),
     deploymentUrl: productionDeploymentUrl,
+    accessMode: config.accessMode,
+    tokenTtlHours: config.tokenTtlHours,
+    provisioningStatus: config.provisioningStatus,
+    provisioningDetail: {
+      sequence: [
+        "pending_vercel_domain",
+        "pending_dns_validation",
+        "waiting_for_vercel_ssl",
+        "pending_cloudflare_gate",
+        "ready",
+      ],
+      cloudflareAccessOptional: true,
+      vercelSslRequiredBeforeCloudflareProxy: true,
+    },
+    readyAt,
     publicDemoUrl: config.publicDemoUrl,
     deepLink: config.deepLink,
     expiresAt: expiry,
@@ -1991,46 +2348,209 @@ async function linkProjectToDemoPortal(project, input = {}, options = {}) {
       registryFile: demoPortal.clientsFile,
       clientSlug: record.slug,
       publicDemoUrl: record.publicDemoUrl,
-      passwordGenerated: Boolean(generatedPassword),
+      accessMode: record.accessMode,
+      provisioningStatus: record.provisioningStatus,
     },
   );
+  const cloudflareProvisioning = await queueDemoCloudflareProvisioning(project, record, site);
+  const readyToShare = demoReadyToShare(record.provisioningStatus);
 
   return {
     ok: true,
     storage: "local-json",
     created: !existing,
-    passwordGenerated: Boolean(generatedPassword),
-    generatedPassword,
     registryPath,
     clientSlug: record.slug,
     clientName: record.clientName,
     clientEmail: record.clientEmail,
     organizationName: record.organizationName,
+    approvedEmails: record.approvedEmails || [],
+    accessMode: record.accessMode,
+    tokenTtlHours: record.tokenTtlHours,
+    provisioningStatus: record.provisioningStatus,
+    readyToShare,
     publicDemoUrl: record.publicDemoUrl,
-    deepLink: record.deepLink,
+    deepLink: readyToShare ? record.deepLink : "",
     siteUrl: site.url,
     deploymentUrl: record.deploymentUrl,
     productionReady: Boolean(productionDeploymentUrl),
     expiresAt: record.expiresAt,
-    emailDraft: demoEmailDraft(record, generatedPassword),
+    emailDraft: demoEmailDraft(record),
+    cloudflareProvisioning,
+  };
+}
+
+async function updateDemoApprovedEmail(project, input = {}, status = "active") {
+  const recipientEmail = normalizeDemoEmail(input.recipientEmail || input.approvedEmail || input.clientEmail);
+  if (!recipientEmail || !validEmail(recipientEmail)) {
+    throw new Error("Enter a valid approved recipient email address.");
+  }
+  const result = await linkProjectToDemoPortal(project, input);
+  const sql = demoPortalDb();
+  if (sql) {
+    await sql`
+      insert into demo_client_approved_emails (
+        client_slug,
+        email,
+        status,
+        approved_by_email,
+        updated_at
+      )
+      values (
+        ${result.clientSlug},
+        ${recipientEmail},
+        ${status},
+        ${process.env.DEMO_APPROVED_BY_EMAIL || "forge@ridgepath.io"},
+        now()
+      )
+      on conflict (client_slug, email) do update set
+        status = excluded.status,
+        updated_at = now()
+    `;
+    if (status !== "active") {
+      await sql`
+        update demo_client_access_tokens
+        set status = 'revoked'
+        where client_slug = ${result.clientSlug}
+          and email = ${recipientEmail}
+          and status = 'active'
+      `;
+    }
+    const approvedEmails = await listDemoApprovedEmails(sql, result.clientSlug);
+    return {
+      ...result,
+      approvedEmails,
+      message: status === "active" ? "Approved recipient added." : "Approved recipient revoked.",
+    };
+  }
+
+  const settings = await launcherSettings();
+  const demoPortal = demoPortalIntegrationSettings(settings);
+  const registryPath = path.join(demoPortal.root, normalizeRelativePath(demoPortal.clientsFile));
+  const clients = await readJson(registryPath, []);
+  const index = clients.findIndex((client) => client?.slug === result.clientSlug);
+  if (index >= 0) {
+    const emails = Array.isArray(clients[index].approvedEmails) ? clients[index].approvedEmails : [];
+    const filtered = emails.filter((entry) => normalizeDemoEmail(typeof entry === "string" ? entry : entry?.email) !== recipientEmail);
+    if (status === "active") filtered.push(recipientEmail);
+    clients[index].approvedEmails = filtered;
+    await writeJson(registryPath, clients);
+  }
+  return {
+    ...result,
+    approvedEmails: status === "active"
+      ? [...new Set([...(result.approvedEmails || []), recipientEmail])]
+      : (result.approvedEmails || []).filter((email) => normalizeDemoEmail(email) !== recipientEmail),
+    message: status === "active" ? "Approved recipient added." : "Approved recipient revoked.",
   };
 }
 
 async function resetDemoPortalAccess(project, input = {}) {
-  return linkProjectToDemoPortal(project, input, { resetAccess: true });
+  const result = await linkProjectToDemoPortal(project, input);
+  const sql = demoPortalDb();
+  const recipientEmail = normalizeDemoEmail(input.recipientEmail || input.approvedEmail || "");
+  if (sql) {
+    if (recipientEmail && !validEmail(recipientEmail)) {
+      throw new Error("Enter a valid approved recipient email address.");
+    }
+    if (recipientEmail) {
+      await sql`
+        update demo_client_access_tokens
+        set status = 'revoked'
+        where client_slug = ${result.clientSlug}
+          and email = ${recipientEmail}
+          and status = 'active'
+      `;
+    } else {
+      await sql`
+        update demo_client_access_tokens
+        set status = 'revoked'
+        where client_slug = ${result.clientSlug}
+          and status = 'active'
+      `;
+    }
+    await sql`
+      update demo_clients
+      set access_reset_at = now(),
+          updated_at = now()
+      where slug = ${result.clientSlug}
+    `;
+  }
+  await appendActivity(project.id, "demo-portal-reset-access", "Revoked active RidgePath demo access tokens", {
+    clientSlug: result.clientSlug,
+    recipientEmail: recipientEmail || "all",
+  });
+  return {
+    ...result,
+    accessResetAt: new Date().toISOString(),
+    message: recipientEmail ? "Recipient access was reset." : "All active demo access links were reset.",
+  };
 }
 
 async function sendDemoPortalConnectionLink(project, input = {}) {
-  const result = await linkProjectToDemoPortal(project, { ...input, markInviteSent: true });
-  const draft = demoEmailDraft(result, "");
+  const result = await linkProjectToDemoPortal(project, input);
+  const settings = await launcherSettings();
+  const demoPortal = demoPortalIntegrationSettings(settings);
+  const recipientEmail = normalizeDemoEmail(input.recipientEmail || input.approvedEmail || result.clientEmail);
+  if (!recipientEmail || !validEmail(recipientEmail)) {
+    throw new Error("Enter a valid approved recipient email address before sending.");
+  }
+  const approvedEmails = (result.approvedEmails || []).map((email) => normalizeDemoEmail(typeof email === "string" ? email : email?.email));
+  if (!approvedEmails.includes(recipientEmail)) {
+    throw new Error("Add this recipient to the approved email list before sending a preview link.");
+  }
+  if (!result.readyToShare) {
+    return {
+      ...result,
+      email: {
+        sent: false,
+        configured: demoPortalEmailConfigured(),
+        message: "The demo link is not shareable until provisioning status is ready.",
+      },
+      emailDraft: demoEmailDraft(result),
+    };
+  }
+  if (!demoPortalEmailConfigured()) {
+    return {
+      ...result,
+      email: {
+        sent: false,
+        configured: false,
+        message: "Email sending is not configured. Configure Resend before sending access links.",
+      },
+      emailDraft: demoEmailDraft(result),
+    };
+  }
+  const token = await createDemoPortalAccessToken(result, demoPortal, recipientEmail);
+  if (!token.created) {
+    return {
+      ...result,
+      email: {
+        sent: false,
+        configured: true,
+        message: "A Neon demo registry is required before Forge can send token links.",
+      },
+      emailDraft: demoEmailDraft(result),
+    };
+  }
+  const draft = demoAccessEmailDraft(result, recipientEmail, token.accessLink, token.expiresAt);
   const email = await sendDemoPortalEmail(draft);
+  const sql = demoPortalDb();
+  if (sql && email.sent) {
+    await sql`
+      update demo_clients
+      set last_invite_sent_at = now(),
+          updated_at = now()
+      where slug = ${result.clientSlug}
+    `;
+  }
   await appendActivity(
     project.id,
     "demo-portal-send-link",
-    email.sent ? "Sent RidgePath demo portal connection link" : "Prepared RidgePath demo portal connection link draft",
+    email.sent ? "Sent RidgePath demo access link" : "Prepared RidgePath demo access link",
     {
       clientSlug: result.clientSlug,
-      clientEmail: result.clientEmail,
+      recipientEmail,
       sent: email.sent,
       configured: email.configured,
     },
@@ -2038,7 +2558,13 @@ async function sendDemoPortalConnectionLink(project, input = {}) {
   return {
     ...result,
     email,
-    emailDraft: draft,
+    inviteExpiresAt: token.expiresAt,
+    lastInviteSentAt: new Date().toISOString(),
+    emailDraft: {
+      to: recipientEmail,
+      subject: draft.subject,
+      body: "A private expiring RidgePath demo access link was generated and sent server-side. Raw tokens are not exposed in Forge.",
+    },
   };
 }
 
@@ -2358,7 +2884,7 @@ async function findProject(projectId) {
 function spawnService(project, service) {
   const child = spawn("cmd.exe", ["/c", "npm.cmd", "run", service.script], {
     cwd: project.path,
-    env: { ...process.env, FORCE_COLOR: "1" },
+    env: { HOST: "0.0.0.0", ...process.env, FORCE_COLOR: "1" },
     windowsHide: true,
   });
 
@@ -3132,6 +3658,26 @@ app.post("/api/projects/:projectId/demo-portal-reset-access", async (req, res) =
     const project = await findProject(req.params.projectId);
     if (!project) return res.status(404).json({ error: "Project not found." });
     res.json(await resetDemoPortalAccess(project, req.body || {}));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/projects/:projectId/demo-portal-approved-emails", async (req, res) => {
+  try {
+    const project = await findProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: "Project not found." });
+    res.json(await updateDemoApprovedEmail(project, req.body || {}, "active"));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/projects/:projectId/demo-portal-revoke-email", async (req, res) => {
+  try {
+    const project = await findProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: "Project not found." });
+    res.json(await updateDemoApprovedEmail(project, req.body || {}, "revoked"));
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

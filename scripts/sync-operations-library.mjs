@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { runnerMetadata } from "./runner-identity.mjs";
 
 const ROOT = process.cwd();
 const DEFAULT_LOCAL_API = "http://127.0.0.1:3059";
@@ -51,6 +52,7 @@ function runnerIdentity() {
       "command-queue-read",
       "local-actions-require-approval",
     ],
+    metadata: runnerMetadata(),
   };
 }
 

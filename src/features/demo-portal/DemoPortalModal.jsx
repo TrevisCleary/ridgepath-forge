@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, Copy, ExternalLink, Mail, RotateCw, Save, X } from "lucide-react";
+import { AlertTriangle, Check, Copy, ExternalLink, Mail, RotateCw, Save, UserMinus, UserPlus, X } from "lucide-react";
 import { apiJson } from "../../lib/api.js";
 
 function slugify(value) {
@@ -17,15 +17,20 @@ function defaultForm(project) {
     clientSlug,
     clientEmail: "",
     organizationName: "",
+    approvedEmails: "",
     siteTitle: project.name || project.id,
     siteSlug,
+    demoSiteUrl: project.productionUrl || "",
+    presentationMode: "iframe",
+    provisioningStatus: "pending_vercel_domain",
+    tokenTtlHours: 72,
     projectStatus: project.productionUrl ? "Production demo linked" : "Needs production deployment URL",
     projectPhase: project.projectManagement?.dashboard?.summary?.currentPhase || "Needs review",
     progress: 50,
     updateMessage: project.projectManagement?.dashboard?.summary?.nextCodexAction || `${project.name} was linked to the RidgePath demo portal from Forge.`,
     active: true,
     publicDemoUrl: `https://ridgepath.io/demos/${clientSlug}`,
-    deepLink: `https://ridgepath.io/demos/${clientSlug}?site=${encodeURIComponent(siteSlug)}`,
+    deepLink: `https://ridgepath.io/demos/${clientSlug}/sites/${encodeURIComponent(siteSlug)}`,
   };
 }
 
@@ -39,8 +44,7 @@ function draftFromResultOrForm(result, form) {
       "",
       "Your RidgePath demo workspace is ready for review.",
       "",
-      `Workspace link: ${form.deepLink || form.publicDemoUrl}`,
-      "Use your RidgePath demo portal password. If you need a reset, reply to this email.",
+      "Use the private expiring link sent to your approved email address. If it expires, request a fresh link from the demo access page.",
       "",
       "Thank you,",
       "RidgePath Technologies",
@@ -73,6 +77,7 @@ export function DemoPortalModal({ project, onClose, onSaved }) {
   const [copied, setCopied] = useState("");
   const [emailConfigured, setEmailConfigured] = useState(false);
   const [storage, setStorage] = useState("");
+  const [recipientEmail, setRecipientEmail] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -82,7 +87,11 @@ export function DemoPortalModal({ project, onClose, onSaved }) {
       try {
         const data = await apiJson(`/api/projects/${project.id}/demo-portal-config`);
         if (cancelled) return;
-        setForm({ ...defaultForm(project), ...(data.config || {}) });
+        const loadedConfig = { ...(data.config || {}) };
+        loadedConfig.approvedEmails = Array.isArray(loadedConfig.approvedEmails)
+          ? loadedConfig.approvedEmails.join("\n")
+          : loadedConfig.approvedEmailsText || loadedConfig.approvedEmails || "";
+        setForm({ ...defaultForm(project), ...loadedConfig });
         setEmailConfigured(Boolean(data.emailConfigured));
         setStorage(data.storage || "");
       } catch (loadError) {
@@ -98,8 +107,15 @@ export function DemoPortalModal({ project, onClose, onSaved }) {
   }, [project.id]);
 
   const emailDraft = useMemo(() => draftFromResultOrForm(result, form), [result, form]);
-  const productionUrl = project.productionUrl || "";
+  const productionUrl = form.demoSiteUrl || project.productionUrl || "";
   const localUrl = project.liveUrl && project.liveUrl !== productionUrl ? project.liveUrl : "";
+  const provisioningStatus = result?.provisioningStatus || form.provisioningStatus || "pending_vercel_domain";
+  const readyToShare = result?.readyToShare ?? provisioningStatus === "ready";
+  const shareLink = readyToShare ? (result?.deepLink || form.deepLink || form.publicDemoUrl) : "";
+  const approvedRecipients = result?.approvedEmails || form.approvedEmails || "";
+  const approvedRecipientText = Array.isArray(approvedRecipients)
+    ? approvedRecipients.map((entry) => typeof entry === "string" ? entry : `${entry.email}${entry.status && entry.status !== "active" ? ` (${entry.status})` : ""}`).join("\n")
+    : approvedRecipients;
 
   function updateField(field, value) {
     setForm((current) => {
@@ -109,7 +125,7 @@ export function DemoPortalModal({ project, onClose, onSaved }) {
         const siteSlug = field === "siteSlug" ? slugify(value) : current.siteSlug;
         next[field] = field === "clientSlug" ? clientSlug : siteSlug;
         next.publicDemoUrl = `https://ridgepath.io/demos/${clientSlug}`;
-        next.deepLink = `${next.publicDemoUrl}?site=${encodeURIComponent(siteSlug)}`;
+        next.deepLink = `${next.publicDemoUrl}/sites/${encodeURIComponent(siteSlug)}`;
       }
       if (field === "clientName" && !current.clientSlug) {
         next.clientSlug = slugify(value);
@@ -121,14 +137,14 @@ export function DemoPortalModal({ project, onClose, onSaved }) {
     });
   }
 
-  async function submit(endpoint, action) {
+  async function submit(endpoint, action, extra = {}) {
     setBusy(action);
     setError("");
     try {
       const data = await apiJson(`/api/projects/${project.id}/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, ...extra }),
       });
       setResult(data);
       setStorage(data.storage || storage);
@@ -142,6 +158,18 @@ export function DemoPortalModal({ project, onClose, onSaved }) {
     }
   }
 
+  async function recipientAction(endpoint, action) {
+    const data = await submit(endpoint, action, { recipientEmail });
+    if (data?.approvedEmails) {
+      const nextEmails = data.approvedEmails
+        .filter((entry) => typeof entry === "string" || (entry?.status || "active") === "active")
+        .map((entry) => typeof entry === "string" ? entry : entry.email)
+        .filter(Boolean)
+        .join("\n");
+      setForm((current) => ({ ...current, approvedEmails: nextEmails }));
+    }
+  }
+
   async function copyDraft() {
     await copyText(`To: ${emailDraft.to || ""}\nSubject: ${emailDraft.subject}\n\n${emailDraft.body}`);
     setCopied("email");
@@ -149,15 +177,9 @@ export function DemoPortalModal({ project, onClose, onSaved }) {
   }
 
   async function copyDeepLink() {
-    await copyText(result?.deepLink || form.deepLink || form.publicDemoUrl);
+    if (!shareLink) return;
+    await copyText(shareLink);
     setCopied("link");
-    window.setTimeout(() => setCopied(""), 1600);
-  }
-
-  async function copyCredential() {
-    if (!result?.generatedPassword) return;
-    await copyText(result.generatedPassword);
-    setCopied("credential");
     window.setTimeout(() => setCopied(""), 1600);
   }
 
@@ -183,7 +205,31 @@ export function DemoPortalModal({ project, onClose, onSaved }) {
               tone="success"
               icon={<Check size={20} />}
               title={`${result.created ? "Created" : "Updated"} ${result.clientName}`}
-              body={`${result.storage === "neon" ? "Stored in Neon" : "Stored in local fallback JSON"} at ${result.deepLink || result.publicDemoUrl}.`}
+              body={`${result.storage === "neon" ? "Stored in Neon" : "Stored in local fallback JSON"}. Provisioning is ${result.provisioningStatus || "pending"}.`}
+            />
+          ) : null}
+          {result?.email ? (
+            <StatusPanel
+              tone={result.email.sent ? "success" : "warn"}
+              icon={result.email.sent ? <Check size={20} /> : <AlertTriangle size={20} />}
+              title={result.email.sent ? "Access link sent" : "Access link not sent"}
+              body={result.email.message || (result.email.sent ? "The private link was generated and emailed server-side." : "Review email configuration and provisioning status.")}
+            />
+          ) : null}
+          {result?.cloudflareProvisioning?.id ? (
+            <StatusPanel
+              tone="success"
+              icon={<Check size={20} />}
+              title="Cloudflare provisioning queued"
+              body={`Command Center proposal ${result.cloudflareProvisioning.id} is ready for a Codex runner on Waypoint or this computer.`}
+            />
+          ) : null}
+          {result?.cloudflareProvisioning?.queued === false ? (
+            <StatusPanel
+              tone="warn"
+              icon={<AlertTriangle size={20} />}
+              title="Cloudflare provisioning was not queued"
+              body={result.cloudflareProvisioning.error || "Create the Cloudflare Access app manually or retry after Command Center storage is available."}
             />
           ) : null}
           {!productionUrl ? (
@@ -201,6 +247,7 @@ export function DemoPortalModal({ project, onClose, onSaved }) {
             <PreviewRow label="Production URL" value={productionUrl || "Not configured"} href={productionUrl} warn={!productionUrl} />
             <PreviewRow label="Local URL" value={localUrl || "Not selected"} muted />
             <PreviewRow label="Storage" value={storage || "Checking"} />
+            <PreviewRow label="Provisioning" value={provisioningStatus} warn={!readyToShare} />
           </div>
 
           {loading ? (
@@ -225,6 +272,10 @@ export function DemoPortalModal({ project, onClose, onSaved }) {
                   Organization
                   <input value={form.organizationName} onChange={(event) => updateField("organizationName", event.target.value)} />
                 </label>
+                <label className="demo-wide-field">
+                  Approved recipient emails
+                  <textarea value={form.approvedEmails} onChange={(event) => updateField("approvedEmails", event.target.value)} placeholder="one@example.com, two@example.com" rows={3} />
+                </label>
               </fieldset>
 
               <fieldset>
@@ -236,6 +287,34 @@ export function DemoPortalModal({ project, onClose, onSaved }) {
                 <label>
                   Site slug
                   <input value={form.siteSlug} onChange={(event) => updateField("siteSlug", event.target.value)} required />
+                </label>
+                <label className="demo-wide-field">
+                  Demo site URL
+                  <input value={form.demoSiteUrl} onChange={(event) => updateField("demoSiteUrl", event.target.value)} placeholder="https://client-site.vercel.app" />
+                </label>
+                <label>
+                  Presentation mode
+                  <select value={form.presentationMode} onChange={(event) => updateField("presentationMode", event.target.value)}>
+                    <option value="iframe">RidgePath frame</option>
+                    <option value="external">External link</option>
+                    <option value="proxy">Proxy later</option>
+                    <option value="hosted">Hosted later</option>
+                  </select>
+                </label>
+                <label>
+                  Provisioning status
+                  <select value={form.provisioningStatus} onChange={(event) => updateField("provisioningStatus", event.target.value)}>
+                    <option value="pending_vercel_domain">Pending Vercel domain</option>
+                    <option value="pending_dns_validation">Pending DNS validation</option>
+                    <option value="waiting_for_vercel_ssl">Waiting for Vercel SSL</option>
+                    <option value="pending_cloudflare_gate">Pending Cloudflare gate</option>
+                    <option value="ready">Ready</option>
+                    <option value="failed">Failed</option>
+                  </select>
+                </label>
+                <label>
+                  Access link hours
+                  <input type="number" min="1" max="720" value={form.tokenTtlHours} onChange={(event) => updateField("tokenTtlHours", event.target.value)} />
                 </label>
                 <label>
                   Project status
@@ -257,23 +336,16 @@ export function DemoPortalModal({ project, onClose, onSaved }) {
 
               <fieldset>
                 <legend>Connection Details</legend>
-                <PreviewRow label="Workspace link" value={form.publicDemoUrl} href={form.publicDemoUrl} />
-                <PreviewRow label="Deep link" value={form.deepLink} href={form.deepLink} />
-                {result?.generatedPassword ? (
-                  <div className="demo-credential">
-                    <span>Temporary credential</span>
-                    <code>{result.generatedPassword}</code>
-                    <button className="secondary-action" type="button" onClick={copyCredential}>
-                      <Copy size={15} />
-                      {copied === "credential" ? "Copied" : "Copy"}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="demo-credential muted">
-                    <span>Credential</span>
-                    <strong>Existing password is preserved unless you reset access.</strong>
-                  </div>
-                )}
+                <PreviewRow label="Workspace link" value={readyToShare ? form.publicDemoUrl : "Hidden until provisioning is ready"} href={readyToShare ? form.publicDemoUrl : ""} warn={!readyToShare} />
+                <PreviewRow label="Deep link" value={readyToShare ? form.deepLink : "Hidden until provisioning is ready"} href={readyToShare ? form.deepLink : ""} warn={!readyToShare} />
+                <label className="demo-wide-field">
+                  Recipient action email
+                  <input type="email" value={recipientEmail} onChange={(event) => setRecipientEmail(event.target.value)} placeholder={form.clientEmail || "approved@example.com"} />
+                </label>
+                <label className="demo-wide-field">
+                  Approved recipients
+                  <textarea readOnly value={approvedRecipientText} rows={4} />
+                </label>
                 <label className="demo-wide-field">
                   Email preview
                   <textarea readOnly value={`To: ${emailDraft.to || ""}\nSubject: ${emailDraft.subject}\n\n${emailDraft.body}`} rows={8} />
@@ -285,7 +357,7 @@ export function DemoPortalModal({ project, onClose, onSaved }) {
                 <button className="secondary-action" type="button" onClick={onClose} disabled={Boolean(busy)}>
                   Cancel
                 </button>
-                <button className="secondary-action" type="button" onClick={copyDeepLink} disabled={Boolean(busy)}>
+                <button className="secondary-action" type="button" onClick={copyDeepLink} disabled={Boolean(busy) || !readyToShare}>
                   <Copy size={15} />
                   {copied === "link" ? "Copied" : "Copy Link"}
                 </button>
@@ -293,20 +365,28 @@ export function DemoPortalModal({ project, onClose, onSaved }) {
                   <Copy size={15} />
                   {copied === "email" ? "Copied" : "Copy Email"}
                 </button>
-                <button className="secondary-action" type="button" onClick={() => submit("demo-portal-reset-access", "reset")} disabled={Boolean(busy)}>
+                <button className="secondary-action" type="button" onClick={() => recipientAction("demo-portal-approved-emails", "add-recipient")} disabled={Boolean(busy) || !recipientEmail}>
+                  <UserPlus size={15} />
+                  {busy === "add-recipient" ? "Adding..." : "Add Recipient"}
+                </button>
+                <button className="secondary-action" type="button" onClick={() => recipientAction("demo-portal-revoke-email", "revoke-recipient")} disabled={Boolean(busy) || !recipientEmail}>
+                  <UserMinus size={15} />
+                  {busy === "revoke-recipient" ? "Revoking..." : "Revoke Recipient"}
+                </button>
+                <button className="secondary-action" type="button" onClick={() => submit("demo-portal-reset-access", "reset", { recipientEmail })} disabled={Boolean(busy)}>
                   <RotateCw size={15} />
                   {busy === "reset" ? "Resetting..." : "Reset Access"}
                 </button>
-                <button className="secondary-action" type="button" onClick={() => submit("demo-portal-send-link", "send")} disabled={Boolean(busy)}>
+                <button className="secondary-action" type="button" onClick={() => submit("demo-portal-send-link", "send", { recipientEmail })} disabled={Boolean(busy) || !readyToShare}>
                   <Mail size={15} />
-                  {busy === "send" ? "Sending..." : emailConfigured ? "Send Link" : "Prepare Link"}
+                  {busy === "send" ? "Sending..." : emailConfigured ? "Send Access Link" : "Email Not Configured"}
                 </button>
                 <button className="secondary-action primary-secondary" type="submit" disabled={Boolean(busy)}>
                   <Save size={15} />
                   {busy === "save" ? "Saving..." : "Save Access"}
                 </button>
-                {(result?.deepLink || form.deepLink) ? (
-                  <a className="secondary-action primary-secondary" href={result?.deepLink || form.deepLink} target="_blank" rel="noreferrer">
+                {shareLink ? (
+                  <a className="secondary-action primary-secondary" href={shareLink} target="_blank" rel="noreferrer">
                     <ExternalLink size={15} />
                     Open
                   </a>

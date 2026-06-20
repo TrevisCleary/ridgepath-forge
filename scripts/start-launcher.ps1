@@ -29,4 +29,25 @@ Start-Process -FilePath "node.exe" `
   -RedirectStandardError (Join-Path $logDir "forge-redirect.err.log") `
   -WindowStyle Hidden
 
+Start-Process -FilePath "npm.cmd" `
+  -ArgumentList @("run", "runner:start") `
+  -WorkingDirectory $repoRoot `
+  -RedirectStandardOutput (Join-Path $logDir "forge-runner-heartbeat.out.log") `
+  -RedirectStandardError (Join-Path $logDir "forge-runner-heartbeat.err.log") `
+  -WindowStyle Hidden
+
+Start-Process -FilePath "npm.cmd" `
+  -ArgumentList @("run", "runner:execute:start") `
+  -WorkingDirectory $repoRoot `
+  -RedirectStandardOutput (Join-Path $logDir "forge-runner-execute.out.log") `
+  -RedirectStandardError (Join-Path $logDir "forge-runner-execute.err.log") `
+  -WindowStyle Hidden
+
+Start-Process -FilePath "npm.cmd" `
+  -ArgumentList @("run", "runner:packets:start") `
+  -WorkingDirectory $repoRoot `
+  -RedirectStandardOutput (Join-Path $logDir "forge-runner-packets.out.log") `
+  -RedirectStandardError (Join-Path $logDir "forge-runner-packets.err.log") `
+  -WindowStyle Hidden
+
 Write-Host "RidgePath Forge startup requested from '$repoRoot'."

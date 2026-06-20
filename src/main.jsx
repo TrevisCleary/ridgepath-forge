@@ -430,7 +430,7 @@ function App() {
         body: JSON.stringify(values),
       });
       await loadCommandCenterState();
-      setActionNotice(`Queued command request: ${command.commandType}. Approve it in Runtime for the paired runner to execute.`);
+      setActionNotice(`Queued command request: ${command.commandType}. The paired runner will pick it up automatically.`);
       return command;
     } catch (error) {
       setActionError(error.message || "Could not queue command request.");
@@ -467,6 +467,10 @@ function App() {
       runnerId: runner?.id || "",
       ...values,
       requestedBy: "owner",
+      approvalStatus: values.approvalStatus || "approved",
+      executionStatus: values.executionStatus || "queued",
+      approvedBy: values.approvedBy || "owner",
+      approvedAt: values.approvedAt || new Date().toISOString(),
     });
   }
 
@@ -551,6 +555,10 @@ function App() {
   const activeLocalRunners = localRunners.filter((runner) => runner.paired);
   const localRunnerPaired = Boolean(commandCenterStatus?.localRunnerPaired || activeLocalRunners.length);
   const localControlsEnabled = commandCenterLoaded && (!hostedMode || localRunnerPaired);
+  const launchRunner = activeLocalRunners.find((runner) => runner.metadata?.primaryLanAddress) || activeLocalRunners[0];
+  const launchHost = hostedMode
+    ? launchRunner?.metadata?.primaryLanAddress || launchRunner?.hostname || "localhost"
+    : "localhost";
   const openCommandCount = commandRequests.filter((command) => ["pending", "approved"].includes(command.approvalStatus) && !["succeeded", "failed", "cancelled"].includes(command.executionStatus)).length;
   const openExecutionPacketCount = executionPackets.filter((packet) => !["complete", "failed", "cancelled"].includes(packet.status)).length;
   const latestProjectSyncCommand = commandRequests.find((command) => command.commandType === "project-catalog-sync") || null;
@@ -699,6 +707,7 @@ function App() {
           project={selected}
           busy={busy}
           localControlsEnabled={localControlsEnabled}
+          launchHost={launchHost}
           onBack={() => setSelectedId("")}
           onStart={() => runAction(selected.id, "start")}
           onStop={() => runAction(selected.id, "stop")}
@@ -737,6 +746,7 @@ function App() {
           onRestartProject={(projectId) => runAction(projectId, "restart")}
           onTakeOverProject={(projectId) => runAction(projectId, "take-over")}
           localControlsEnabled={localControlsEnabled}
+          launchHost={launchHost}
         />
       ) : activeView === "runtime" ? (
         <CommandQueue

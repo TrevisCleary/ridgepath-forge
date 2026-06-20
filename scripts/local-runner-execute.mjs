@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { runnerMetadata } from "./runner-identity.mjs";
 
 const ROOT = process.cwd();
 const WATCH = process.argv.includes("--watch");
@@ -70,6 +71,7 @@ function runnerIdentity() {
       "codex-handoff",
       "local-actions-require-approval",
     ],
+    metadata: runnerMetadata(),
   };
 }
 

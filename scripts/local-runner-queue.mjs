@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { runnerMetadata } from "./runner-identity.mjs";
 
 const ROOT = process.cwd();
 const WATCH = process.argv.includes("--watch");
@@ -55,12 +56,7 @@ function runnerIdentity() {
       "codex-handoff",
       "local-actions-require-approval",
     ],
-    metadata: {
-      nodeVersion: process.version,
-      homedir: os.homedir(),
-      projectRoot: process.env.PROJECTS_ROOT || "C:\\Development\\Projects",
-      ridgeFabricRoot: process.env.RIDGE_FABRIC_ROOT || "C:\\Development\\Shared\\ridge-fabric-registry",
-    },
+    metadata: runnerMetadata(),
   };
 }
 

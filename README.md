@@ -51,7 +51,7 @@ Use Take Over on an externally running project to stop the listener on the assig
 
 ## Demo Portal Integration
 
-Use Add to Demo Portal from a selected project's Overview panel to create or update a RidgePath demo portal access record.
+Use Add to Demo Portal from a selected project's Overview panel to open the RidgePath demo portal configuration modal for that project.
 
 When `DEMO_DATABASE_URL` or `DATABASE_URL` is set, Forge writes to the Neon-backed demo registry. Without a database URL, it writes to the RidgePath website fallback file at `data/demo-clients.local.json`.
 
@@ -70,7 +70,27 @@ $env:DEMO_DATABASE_URL = "<neon-pooled-connection-string>"
 npm run dev
 ```
 
-The action stores a generated password hash, local path, repository URL, branch, latest commit, production deployment URL when available, project phase, progress estimate, and update note. The generated client password is shown once in the modal result when a new record is created.
+The modal configures the client display name, client slug, contact email, organization, site title, site slug, status, progress, presentation mode, active/visible state, and client-facing update message. It generates the client workspace link and a site-focused deep link such as:
+
+```text
+https://ridgepath.io/demos/<client-slug>/sites/<site-slug>
+```
+
+`iframe` presentation mode opens the demo behind the RidgePath portal shell while the demo application's own API routes continue to run on that application's deployment origin. `external` leaves the portal and opens the configured production URL directly. `proxy` and `hosted` are reserved for later implementation.
+
+Save Access creates or updates the record. Reset Access generates a new temporary credential, stores only its hash, and shows the generated credential once. Copy Email prepares a connection email draft. Prepare Link records the reminder/send attempt and, when email sending is not configured, returns the same copyable draft instead of failing.
+
+Optional email sending uses a server-side provider abstraction. Set `RESEND_API_KEY` or `DEMO_EMAIL_API_KEY`, and optionally `DEMO_EMAIL_FROM`, before starting Forge. Secrets must stay in environment variables.
+
+Forge also queues a Command Center proposal for Cloudflare demo provisioning unless `DEMO_CLOUDFLARE_QUEUE=off` is set. The proposal contains the target hostname, client email allowlist, demo URL, and a Codex-ready prompt. An authorized Codex runner on Waypoint or this computer should execute the proposal with Cloudflare support enabled, then verify the hostname redirects anonymous users to Cloudflare Access.
+
+The intended client URL pattern is:
+
+```text
+https://<client-slug>.ridgepath.io/
+```
+
+This flat hostname pattern works with Cloudflare Universal SSL on the current plan. Nested hostnames such as `https://<client-slug>.demos.ridgepath.io/` require Advanced Certificate Manager/Total TLS or another certificate strategy because Universal SSL does not cover deeper subdomains. Set `DEMO_CLOUDFLARE_HOST_TEMPLATE` to change the generated host pattern later.
 
 ## Project Registration
 

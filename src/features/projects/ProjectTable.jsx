@@ -22,6 +22,7 @@ export function ProjectTable({
   localRunnerPaired = false,
   projectCatalogStatus = null,
   latestProjectSyncCommand = null,
+  launchHost = "localhost",
   query,
   filters,
   onQueryChange,
@@ -126,7 +127,7 @@ export function ProjectTable({
               </tr>
             ) : projects.length ? (
               projects.map((project) => {
-                const runtime = getProjectRuntimeState(project, busy);
+                const runtime = getProjectRuntimeState(project, busy, launchHost);
                 return (
                   <tr key={project.id} className="project-table-row" onClick={() => onOpenProject(project.id)}>
                     <td>

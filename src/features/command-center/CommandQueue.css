@@ -1,6 +1,8 @@
 .command-queue {
   display: grid;
   gap: 18px;
+  min-height: 0;
+  align-content: start;
 }
 
 .queue-runner-summary {

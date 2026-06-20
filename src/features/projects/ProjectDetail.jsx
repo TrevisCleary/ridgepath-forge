@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { getProjectRuntimeState } from "./runtime.js";
 
-export function ProjectDetail({ project, busy, localControlsEnabled = true, onBack, onStart, onStop, onRestart, onTakeOver, onGitSync, onInitializeProjectManagement, onCreatePortfolioDraft, onLinkDemoPortal, onSaveDescription, onOpenFolder, onOpenProjectManagementFolder }) {
+export function ProjectDetail({ project, busy, localControlsEnabled = true, launchHost = "localhost", onBack, onStart, onStop, onRestart, onTakeOver, onGitSync, onInitializeProjectManagement, onCreatePortfolioDraft, onLinkDemoPortal, onSaveDescription, onOpenFolder, onOpenProjectManagementFolder }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(project.description);
   const [activeMenu, setActiveMenu] = useState("overview");
@@ -36,7 +36,7 @@ export function ProjectDetail({ project, busy, localControlsEnabled = true, onBa
     canUseManagedActions,
     canTakeOver,
     primaryUrl,
-  } = getProjectRuntimeState(project, busy);
+  } = getProjectRuntimeState(project, busy, launchHost);
 
   useEffect(() => {
     setDraft(project.description);
@@ -137,6 +137,7 @@ export function ProjectDetail({ project, busy, localControlsEnabled = true, onBa
               isBusy={isBusy}
               isCreatingPortfolioDraft={busy === `${project.id}:create-portfolio-draft`}
               isLinkingDemoPortal={busy === `${project.id}:link-demo-portal`}
+              launchHost={launchHost}
             />
           ) : null}
           {activeMenu === "management" ? (
@@ -149,7 +150,7 @@ export function ProjectDetail({ project, busy, localControlsEnabled = true, onBa
               isInitializing={busy === `${project.id}:initialize-project-management`}
             />
           ) : null}
-          {activeMenu === "services" ? <ProjectServices project={project} /> : null}
+          {activeMenu === "services" ? <ProjectServices project={project} launchHost={launchHost} /> : null}
           {activeMenu === "activity" ? <ProjectActivity project={project} /> : null}
           {activeMenu === "logs" ? <ProjectLogs project={project} /> : null}
         </div>
@@ -158,7 +159,7 @@ export function ProjectDetail({ project, busy, localControlsEnabled = true, onBa
   );
 }
 
-function ProjectOverview({ project, editing, draft, onDraftChange, onEdit, onCancelEdit, onSaveDescription, onOpenFolder, onGitSync, onCreatePortfolioDraft, onLinkDemoPortal, localControlsEnabled, isBusy, isCreatingPortfolioDraft, isLinkingDemoPortal }) {
+function ProjectOverview({ project, editing, draft, onDraftChange, onEdit, onCancelEdit, onSaveDescription, onOpenFolder, onGitSync, onCreatePortfolioDraft, onLinkDemoPortal, localControlsEnabled, isBusy, isCreatingPortfolioDraft, isLinkingDemoPortal, launchHost = "localhost" }) {
   const primaryServices = project.services.filter((service) => service.kind === "primary");
   const apiServices = project.services.filter((service) => service.kind === "api");
   const liveUrl = project.liveUrl || project.externalUrl || project.homepage || "";
@@ -285,12 +286,12 @@ function ProjectOverview({ project, editing, draft, onDraftChange, onEdit, onCan
         </div>
         <div className="resource-stack">
           {primaryServices.length ? primaryServices.map((service) => (
-            <EndpointResourceRow key={service.id} service={service} title={service.combined ? "Application + API" : "Application"} />
+            <EndpointResourceRow key={service.id} service={service} title={service.combined ? "Application + API" : "Application"} launchHost={launchHost} />
           )) : (
             <div className="empty compact-empty">No application port assigned.</div>
           )}
           {apiServices.length ? apiServices.map((service) => (
-            <EndpointResourceRow key={service.id} service={service} title="Associated API" />
+            <EndpointResourceRow key={service.id} service={service} title="Associated API" launchHost={launchHost} />
           )) : (
             <div className="empty compact-empty">No associated API port assigned.</div>
           )}
@@ -300,8 +301,8 @@ function ProjectOverview({ project, editing, draft, onDraftChange, onEdit, onCan
   );
 }
 
-function EndpointResourceRow({ service, title }) {
-  const url = service.port ? `http://localhost:${service.port}` : "";
+function EndpointResourceRow({ service, title, launchHost = "localhost" }) {
+  const url = service.port ? `http://${launchHost || "localhost"}:${service.port}` : "";
   const canOpen = url && (service.managedRunning || service.portStatus === "open");
   return (
     <div className="resource-row endpoint-row">
@@ -328,7 +329,7 @@ function EndpointResourceRow({ service, title }) {
   );
 }
 
-function ProjectServices({ project }) {
+function ProjectServices({ project, launchHost = "localhost" }) {
   return (
     <div className="workspace-panel">
       <div className="section-title">
@@ -337,7 +338,7 @@ function ProjectServices({ project }) {
       </div>
       <div className="services">
         {project.services.length ? (
-          project.services.map((service) => <ServiceRow key={service.id} service={service} />)
+          project.services.map((service) => <ServiceRow key={service.id} service={service} launchHost={launchHost} />)
         ) : (
           <div className="empty">No runnable application script found.</div>
         )}
@@ -766,8 +767,8 @@ function Info({ label, value, tone }) {
   );
 }
 
-function ServiceRow({ service }) {
-  const url = service.port && (service.managedRunning || service.portStatus === "open") ? `http://localhost:${service.port}` : "";
+function ServiceRow({ service, launchHost = "localhost" }) {
+  const url = service.port && (service.managedRunning || service.portStatus === "open") ? `http://${launchHost || "localhost"}:${service.port}` : "";
   return (
     <div className={`service-row ${service.available ? "" : "unavailable"}`}>
       <div className="service-main">

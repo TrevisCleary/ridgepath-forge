@@ -1,4 +1,4 @@
-export function getProjectRuntimeState(project, busy = "") {
+export function getProjectRuntimeState(project, busy = "", launchHost = "localhost") {
   const services = Array.isArray(project.services) ? project.services : [];
   const isBusy = busy.startsWith(`${project.id}:`);
   const isRunning = project.status === "running";
@@ -15,7 +15,7 @@ export function getProjectRuntimeState(project, busy = "") {
     canStart,
     canUseManagedActions,
     canTakeOver,
-    primaryUrl: canOpenPrimary ? `http://localhost:${primary.port}` : "",
+    primaryUrl: canOpenPrimary ? `http://${launchHost || "localhost"}:${primary.port}` : "",
   };
 }
 

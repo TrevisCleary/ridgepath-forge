@@ -45,9 +45,13 @@ $launcherRoots = @(
   }
 )
 
-$launcherProcessIds = Get-DescendantProcessIds `
-  -RootProcessIds @($launcherRoots | Select-Object -ExpandProperty ProcessId) `
-  -Processes $allProcesses
+$launcherRootProcessIds = @($launcherRoots | Select-Object -ExpandProperty ProcessId)
+$launcherProcessIds = @()
+if ($launcherRootProcessIds.Count -gt 0) {
+  $launcherProcessIds = Get-DescendantProcessIds `
+    -RootProcessIds $launcherRootProcessIds `
+    -Processes $allProcesses
+}
 
 $listenerProcessIds = @(
   Get-NetTCPConnection -LocalPort $ports -ErrorAction SilentlyContinue |

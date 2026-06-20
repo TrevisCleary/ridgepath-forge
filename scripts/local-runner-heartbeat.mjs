@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { runnerMetadata } from "./runner-identity.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -54,12 +55,7 @@ async function sendHeartbeat() {
       "codex-handoff",
       "local-actions-require-approval",
     ],
-    metadata: {
-      nodeVersion: process.version,
-      homedir: os.homedir(),
-      projectRoot: process.env.PROJECTS_ROOT || "C:\\Development\\Projects",
-      ridgeFabricRoot: process.env.RIDGE_FABRIC_ROOT || "C:\\Development\\Shared\\ridge-fabric-registry",
-    },
+    metadata: runnerMetadata(),
   });
 
   console.log(JSON.stringify({
